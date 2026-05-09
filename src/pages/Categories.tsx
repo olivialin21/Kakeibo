@@ -107,7 +107,7 @@ export default function Categories() {
             </button>
             <button
               onClick={() => setIsAdding(false)}
-              className="px-6 bg-gray-50 dark:bg-gray-800 text-gray-400 py-2.5 rounded-xl text-[10px] font-medium active:scale-95 transition-transform"
+              className="px-6 bg-gray-50 dark:bg-gray-800 text-gray-400 py-2.5 rounded-xl text-[10px] font-medium hover:bg-gray-100 dark:hover:bg-gray-700 active:scale-95 transition-all"
             >
               取消
             </button>

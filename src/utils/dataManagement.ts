@@ -51,7 +51,7 @@ export async function exportData() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `Bookkeeping_Backup_${new Date().toISOString().split('T')[0]}.json`;
+  a.download = `Kakeibo_Backup_${new Date().toISOString().split('T')[0]}.json`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -75,19 +75,30 @@ export async function importData(file: File): Promise<boolean> {
           await db.trips.clear();
 
           if (backup.data.categories) await db.categories.bulkAdd(backup.data.categories);
-          
+
           if (backup.data.receipts) {
             const receiptsToRestore = backup.data.receipts.map((r: any) => {
+              let processed = { ...r };
               if (r.imageBase64s && r.imageBase64s.length > 0) {
                 const { imageBase64s, ...rest } = r;
-                return { ...rest, imageBlobs: imageBase64s.map((b: string) => base64ToBlob(b)) };
-              }
-              // Fallback for old single image format
-              if (r.imageBase64) {
+                processed = { ...rest, imageBlobs: imageBase64s.map((b: string) => base64ToBlob(b)) };
+              } else if (r.imageBase64) {
+                // Fallback for old single image format
                 const { imageBase64, ...rest } = r;
-                return { ...rest, imageBlobs: [base64ToBlob(imageBase64)] };
+                processed = { ...rest, imageBlobs: [base64ToBlob(imageBase64)] };
               }
-              return r;
+
+              // Ensure imageBlobs contains only valid Blobs, otherwise set to undefined
+              if (processed.imageBlobs) {
+                processed.imageBlobs = processed.imageBlobs.filter((b: any) => b instanceof Blob);
+                if (processed.imageBlobs.length === 0) delete processed.imageBlobs;
+              }
+              // Also clean up legacy single imageBlob if it's not a Blob
+              if (processed.imageBlob && !(processed.imageBlob instanceof Blob)) {
+                delete processed.imageBlob;
+              }
+
+              return processed;
             });
             await db.receipts.bulkAdd(receiptsToRestore);
           }

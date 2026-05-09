@@ -64,12 +64,14 @@ export default function AddReceipt() {
           setManualTwdAmount(receipt.manualTwdAmount?.toString() || '');
 
           if (receipt.imageBlobs && receipt.imageBlobs.length > 0) {
-            setImageBlobs(receipt.imageBlobs);
-            const urls = receipt.imageBlobs.map(blob => URL.createObjectURL(blob));
+            const validBlobs = receipt.imageBlobs.filter(b => b instanceof Blob);
+            setImageBlobs(validBlobs);
+            const urls = validBlobs.map(blob => URL.createObjectURL(blob));
             setImagePreviews(urls);
-          } else if ((receipt as any).imageBlob) {
-            setImageBlobs([(receipt as any).imageBlob]);
-            setImagePreviews([URL.createObjectURL((receipt as any).imageBlob)]);
+          } else if ((receipt as any).imageBlob && (receipt as any).imageBlob instanceof Blob) {
+            const blob = (receipt as any).imageBlob;
+            setImageBlobs([blob]);
+            setImagePreviews([URL.createObjectURL(blob)]);
           }
 
           const dbItems = await db.receiptItems.where('receiptId').equals(id).toArray();
@@ -292,7 +294,7 @@ export default function AddReceipt() {
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={isScanning}
-              className="flex-1 flex items-center justify-center space-x-2 px-3 py-3 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 rounded-2xl text-xs font-bold hover:bg-gray-50 transition-all shadow-md disabled:opacity-50 active:scale-95 border border-gray-100 dark:border-gray-700"
+              className="flex-1 flex items-center justify-center space-x-2 px-3 py-3 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 rounded-2xl text-xs font-bold hover:bg-gray-50 dark:hover:bg-gray-700 transition-all shadow-md disabled:opacity-50 active:scale-95 border border-gray-100 dark:border-gray-700"
             >
               <Camera size={16} />
               <span>本地辨識</span>

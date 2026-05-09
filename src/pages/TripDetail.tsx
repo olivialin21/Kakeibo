@@ -226,13 +226,13 @@ export default function TripDetail() {
                     <div key={r.id} className="relative group">
                       <Link to={`/edit/${r.id}`} className="bg-white dark:bg-gray-800 flex items-center p-4 rounded-2xl border border-gray-100 dark:border-gray-700 active:bg-gray-50 transition-all shadow-[0_2px_8px_rgba(0,0,0,0.02)] hover:border-primary/20">
                         <div className="w-10 h-10 rounded-xl bg-gray-50 dark:bg-gray-900 flex items-center justify-center mr-4 shrink-0 border border-gray-50 dark:border-gray-700 overflow-hidden shadow-inner">
-                          {r.imageBlobs && r.imageBlobs.length > 0 ? (
+                          {r.imageBlobs && r.imageBlobs.length > 0 && r.imageBlobs[0] instanceof Blob ? (
                             <img
                               src={URL.createObjectURL(r.imageBlobs[0])}
                               alt=""
                               className="w-full h-full object-cover"
                             />
-                          ) : (r as any).imageBlob ? (
+                          ) : (r as any).imageBlob && (r as any).imageBlob instanceof Blob ? (
                             <img
                               src={URL.createObjectURL((r as any).imageBlob)}
                               alt=""

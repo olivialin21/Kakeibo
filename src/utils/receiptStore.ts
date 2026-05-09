@@ -12,7 +12,7 @@ export interface SavedReceipt {
   createdAt: string;
 }
 
-const STORAGE_KEY = 'bookkeeping_receipts';
+const STORAGE_KEY = 'kakeibo_receipts';
 
 export const receiptStore = {
   // 取得所有收據
@@ -29,7 +29,7 @@ export const receiptStore = {
       id: crypto.randomUUID(),
       createdAt: new Date().toISOString(),
     };
-    
+
     receipts.unshift(newReceipt); // 新的在前面
     localStorage.setItem(STORAGE_KEY, JSON.stringify(receipts));
     return newReceipt;
@@ -43,7 +43,7 @@ export const receiptStore = {
 
   // 更新收據
   update(id: string, updates: Partial<SavedReceipt>) {
-    const receipts = this.getAll().map(r => 
+    const receipts = this.getAll().map(r =>
       r.id === id ? { ...r, ...updates } : r
     );
     localStorage.setItem(STORAGE_KEY, JSON.stringify(receipts));
@@ -54,7 +54,7 @@ export const receiptStore = {
     const receipts = this.getAll();
     const now = new Date();
     const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    
+
     return receipts
       .filter(r => r.date.startsWith(currentMonth))
       .reduce((sum, r) => sum + r.totalAmount, 0);
