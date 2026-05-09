@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Routes, Route, NavLink } from 'react-router-dom';
-import { Home, PlusCircle, PieChart, Tags, Moon, Sun, Plane } from 'lucide-react';
+import { Routes, Route, NavLink, useLocation, Link } from 'react-router-dom';
+import { Home, PlusCircle, PieChart, Tags, Moon, Sun, Plane, Plus, Camera } from 'lucide-react';
 import HomePage from './pages/Home';
 import AddReceiptPage from './pages/AddReceipt';
 import ChartsPage from './pages/Charts';
@@ -29,12 +29,15 @@ function App() {
     }
   }, [isDark]);
 
+  const location = useLocation();
+  const isAddPage = location.pathname.startsWith('/add') || location.pathname.startsWith('/edit');
+
   return (
     <div className="min-h-screen pb-24 bg-background text-foreground transition-colors duration-300">
       {/* Header */}
-      <header className="sticky top-0 z-20 glass border-b border-gray-200/50 dark:border-gray-800/50 px-4 py-3.5 flex justify-between items-center">
+      <header className="sticky top-0 z-20 glass border-b border-gray-200/50 dark:border-gray-800/50 px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-3.5 flex justify-between items-center">
         <h1 className="text-lg font-semibold text-gray-800 dark:text-gray-100 tracking-tight">
-          日幣 <span className="text-primary font-bold">記帳助手</span>
+          日幣<span className="text-primary font-bold">記帳</span>
         </h1>
         <button
           onClick={() => setIsDark(!isDark)}
@@ -57,12 +60,27 @@ function App() {
         </Routes>
       </main>
 
+      {/* Floating Action Button - Quick Add */}
+      {!isAddPage && (
+        <Link 
+          to={location.pathname.startsWith('/trips/') ? `/add?tripId=${location.pathname.split('/')[2]}` : "/add"}
+          className="fixed right-6 bottom-24 z-30 w-14 h-14 bg-primary text-white rounded-full shadow-2xl shadow-primary/40 flex items-center justify-center active:scale-90 transition-all animate-in zoom-in duration-300"
+        >
+          <div className="relative">
+            <Camera size={24} strokeWidth={2.5} />
+            <div className="absolute -top-1 -right-1 w-4 h-4 bg-white text-primary rounded-full flex items-center justify-center">
+              <Plus size={10} strokeWidth={4} />
+            </div>
+          </div>
+        </Link>
+      )}
+
       {/* Bottom Navigation */}
       <nav className="fixed bottom-0 w-full glass border-t border-gray-200/60 dark:border-gray-800/60 pb-safe z-20">
         <div className="flex justify-around items-center h-16 max-w-2xl mx-auto px-2">
           <NavItem to="/" icon={<Home size={22} />} label="首頁" />
           <NavItem to="/trips" icon={<Plane size={22} />} label="旅行" />
-          <NavItem to="/add" icon={<PlusCircle size={32} className="text-primary fill-primary/10" />} label="" />
+          <div className="w-16" /> {/* Spacer for FAB if needed, or just standard spacing */}
           <NavItem to="/charts" icon={<PieChart size={22} />} label="統計" />
           <NavItem to="/categories" icon={<Tags size={22} />} label="分類" />
         </div>

@@ -18,7 +18,7 @@ export interface Receipt {
   tax8Amount: number;
   tax10Amount: number;
   taxType?: 'inclusive' | 'exclusive';
-  imageBlob?: Blob;
+  imageBlobs?: Blob[];
   manualTwdAmount?: number;
   tripId?: string;
 }
@@ -31,6 +31,8 @@ export interface ReceiptItem {
   finalPrice: number;
   taxRate: number;
   categoryId: string;
+  quantity: number;
+  discount?: number;
 }
 
 export interface Category {

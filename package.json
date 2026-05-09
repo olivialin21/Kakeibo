@@ -10,10 +10,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@paddlejs-models/ocr": "^1.2.4",
-    "@paddlejs/paddlejs-backend-webgl": "^1.2.9",
-    "@paddlejs/paddlejs-core": "^2.2.0",
-    "clsx": "^2.1.1",
     "dexie": "^4.4.2",
     "dexie-react-hooks": "^4.4.0",
     "framer-motion": "^12.38.0",
@@ -25,6 +21,7 @@
     "react-is": "^19.2.5",
     "react-router-dom": "^7.14.2",
     "recharts": "^3.8.1",
+    "swiper": "^12.1.4",
     "tailwind-merge": "^3.5.0",
     "tesseract.js": "^7.0.0"
   },

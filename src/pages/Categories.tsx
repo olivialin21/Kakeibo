@@ -1,13 +1,12 @@
 import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
-import { Plus, Edit2, X, Check } from 'lucide-react';
+import { Plus, Edit2, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const COLORS = [
   '#f87171', '#fb923c', '#fbbf24', '#a3e635', '#4ade80',
-  '#34d399', '#2dd4bf', '#5b7a6f', '#7da093', '#a3b5ad',
-  '#4a6b5e', '#86a89b', '#97b1a6', '#6b8278', '#546961', '#c4956a', '#9ca3af'
+  '#34d399', '#2dd4bf', '#c4956a', '#9ca3af'
 ];
 
 export default function Categories() {
