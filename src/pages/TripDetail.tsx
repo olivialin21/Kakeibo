@@ -222,7 +222,7 @@ export default function TripDetail() {
                 <div key={dateLabel}>
                   <p className="text-[10px] text-gray-400 font-semibold ml-1 mb-2 tracking-widest uppercase">{dateLabel}</p>
                   <div className="space-y-2.5">
-                    {dayReceipts.sort((a, b) => new Date(`${b.date}T${b.time || '00:00'}`).getTime() - new Date(`${a.date}T${a.time || '00:00'}`).getTime()).map(r => (
+                    {dayReceipts.sort((a, b) => b.date - a.date).map(r => (
                     <div key={r.id} className="relative group">
                       <Link to={`/edit/${r.id}`} className="bg-white dark:bg-gray-800 flex items-center p-4 rounded-2xl border border-gray-100 dark:border-gray-700 active:bg-gray-50 transition-all shadow-[0_2px_8px_rgba(0,0,0,0.02)] hover:border-primary/20">
                         <div className="w-10 h-10 rounded-xl bg-gray-50 dark:bg-gray-900 flex items-center justify-center mr-4 shrink-0 border border-gray-50 dark:border-gray-700 overflow-hidden shadow-inner">
@@ -232,9 +232,9 @@ export default function TripDetail() {
                               alt=""
                               className="w-full h-full object-cover"
                             />
-                          ) : r.imageBlob ? (
+                          ) : (r as any).imageBlob ? (
                             <img
-                              src={URL.createObjectURL(r.imageBlob)}
+                              src={URL.createObjectURL((r as any).imageBlob)}
                               alt=""
                               className="w-full h-full object-cover"
                             />

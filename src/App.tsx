@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Routes, Route, NavLink, useLocation, Link } from 'react-router-dom';
-import { Home, PlusCircle, PieChart, Tags, Moon, Sun, Plane, Plus, Camera } from 'lucide-react';
+import { Home, PieChart, Tags, Moon, Sun, Plane, Plus, Camera } from 'lucide-react';
 import HomePage from './pages/Home';
 import AddReceiptPage from './pages/AddReceipt';
 import ChartsPage from './pages/Charts';

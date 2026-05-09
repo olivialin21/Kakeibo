@@ -192,7 +192,12 @@ export default function Home() {
         ) : (
           <div className="space-y-6">
             {Object.entries(groupedReceipts)
-              .sort((a, b) => new Date(b[1][0].date).getTime() - new Date(a[1][0].date).getTime())
+              .sort((a, b) => {
+                const aReceipts = a[1];
+                const bReceipts = b[1];
+                if (!aReceipts || !bReceipts || aReceipts.length === 0 || bReceipts.length === 0) return 0;
+                return new Date(bReceipts[0].date).getTime() - new Date(aReceipts[0].date).getTime();
+              })
               .map(([dateLabel, dayReceipts]) => (
                 <div key={dateLabel}>
                 <p className="text-[10px] text-gray-400 font-semibold ml-1 mb-2 tracking-widest uppercase">{dateLabel}</p>
@@ -218,9 +223,9 @@ export default function Home() {
                                 alt=""
                                 className="w-full h-full object-cover"
                               />
-                            ) : r.imageBlob ? (
+                            ) : (r as any).imageBlob ? (
                               <img
-                                src={URL.createObjectURL(r.imageBlob)}
+                                src={URL.createObjectURL((r as any).imageBlob)}
                                 alt=""
                                 className="w-full h-full object-cover"
                               />

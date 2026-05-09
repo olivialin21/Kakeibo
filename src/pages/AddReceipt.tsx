@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { db, type ReceiptItem } from '../db/db';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Save, Camera, Sparkles, Loader2, Plus, X, Trash2, Maximize2, Receipt, ReceiptJapaneseYen, Plane } from 'lucide-react';
+import { Save, Camera, Sparkles, Loader2, Plus, X, Plane } from 'lucide-react';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { Pagination } from 'swiper/modules';
 
@@ -11,8 +11,8 @@ import 'swiper/css/pagination';
 import './AddReceipt.css'; 
 import { useLiveQuery } from 'dexie-react-hooks';
 import { motion, AnimatePresence } from 'framer-motion';
-import { processReceiptImage, parseTextLines, convertToStandardImage } from '../utils/receiptParser';
-import { translateItemName, autoClassifyItem } from '../utils/itemClassifier';
+import { convertToStandardImage } from '../utils/receiptParser';
+import { translateItemName } from '../utils/itemClassifier';
 import { analyzeReceiptWithAI } from '../utils/gemini';
 
 
@@ -67,9 +67,9 @@ export default function AddReceipt() {
             setImageBlobs(receipt.imageBlobs);
             const urls = receipt.imageBlobs.map(blob => URL.createObjectURL(blob));
             setImagePreviews(urls);
-          } else if (receipt.imageBlob) {
-            setImageBlobs([receipt.imageBlob]);
-            setImagePreviews([URL.createObjectURL(receipt.imageBlob)]);
+          } else if ((receipt as any).imageBlob) {
+            setImageBlobs([(receipt as any).imageBlob]);
+            setImagePreviews([URL.createObjectURL((receipt as any).imageBlob)]);
           }
 
           const dbItems = await db.receiptItems.where('receiptId').equals(id).toArray();
