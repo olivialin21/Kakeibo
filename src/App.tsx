@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Routes, Route, NavLink, useLocation, Link } from 'react-router-dom';
-import { Home, PieChart, Tags, Moon, Sun, Plane, Plus, Camera } from 'lucide-react';
+import { Home, PieChart, Tags, Plane, Plus, Camera, Menu } from 'lucide-react';
 import HomePage from './pages/Home';
 import AddReceiptPage from './pages/AddReceipt';
 import ChartsPage from './pages/Charts';
 import CategoriesPage from './pages/Categories';
 import TripsPage from './pages/Trips';
 import TripDetailPage from './pages/TripDetail';
+import Sidebar from './components/Sidebar';
 
 function App() {
   const [isDark, setIsDark] = useState(() => {
@@ -15,6 +16,8 @@ function App() {
     if (localStorage.getItem('theme') === 'light') return false;
     return window.matchMedia('(prefers-color-scheme: dark)').matches;
   });
+
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -32,20 +35,74 @@ function App() {
   const location = useLocation();
   const isAddPage = location.pathname.startsWith('/add') || location.pathname.startsWith('/edit');
 
+  // Dynamic FAB configuration
+  const getFabConfig = () => {
+    const path = location.pathname;
+
+    if (path === '/trips') {
+      return {
+        to: '/trips', // Typically this would open a modal in TripsPage, or we can add a search param
+        icon: <Plane size={24} strokeWidth={2.5} />,
+        badgeIcon: <Plus size={10} strokeWidth={4} />,
+        label: '新增旅行',
+        state: { openAddModal: true } // Pass state to trigger action in target page
+      };
+    }
+
+    if (path.startsWith('/trips/')) {
+      const tripId = path.split('/')[2];
+      return {
+        to: `/add?tripId=${tripId}`,
+        icon: <Camera size={24} strokeWidth={2.5} />,
+        badgeIcon: <Plus size={10} strokeWidth={4} />,
+        label: '新增收據',
+        state: { from: path }
+      };
+    }
+
+    if (path === '/categories') {
+      return {
+        to: '/categories',
+        icon: <Tags size={24} strokeWidth={2.5} />,
+        badgeIcon: <Plus size={10} strokeWidth={4} />,
+        label: '新增分類',
+        state: { openAddModal: true }
+      };
+    }
+
+    // Default: Home/Other pages
+    return {
+      to: '/add',
+      icon: <Camera size={24} strokeWidth={2.5} />,
+      badgeIcon: <Plus size={10} strokeWidth={4} />,
+      label: '掃描收據',
+      state: { from: path }
+    };
+  };
+
+  const fab = getFabConfig();
+
   return (
     <div className="min-h-screen pb-24 bg-background text-foreground transition-colors duration-300">
+      <Sidebar
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
+        isDark={isDark}
+        setIsDark={setIsDark}
+      />
+
       {/* Header */}
       <header className="sticky top-0 z-20 glass border-b border-gray-200/50 dark:border-gray-800/50 px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-3.5 flex justify-between items-center">
-        <h1 className="text-lg font-semibold text-gray-800 dark:text-gray-100 tracking-tight">
-          日幣<span className="text-primary font-bold">記帳</span>
-        </h1>
-        <button
-          onClick={() => setIsDark(!isDark)}
-          className="p-2 rounded-full hover:bg-gray-200/50 dark:hover:bg-gray-700/50 transition-colors text-gray-600 dark:text-gray-300"
-          aria-label="Toggle Dark Mode"
-        >
-          {isDark ? <Sun size={18} /> : <Moon size={18} />}
-        </button>
+        <div className="flex items-center space-x-3">
+          <button
+            onClick={() => setIsSidebarOpen(true)}
+            className="p-2 -ml-2 rounded-full hover:bg-gray-200/50 dark:hover:bg-gray-700/50 transition-colors text-gray-600 dark:text-gray-300"
+            aria-label="Open Menu"
+          >
+            <Menu size={20} />
+          </button>
+          <div className="flex items-center space-x-2 absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 "><h2 className="text-lg font-bold text-gray-800 dark:text-gray-100">家計簿</h2></div>
+        </div>
       </header>
 
       <main className="p-4 max-w-2xl mx-auto w-full">
@@ -60,16 +117,18 @@ function App() {
         </Routes>
       </main>
 
-      {/* Floating Action Button - Quick Add */}
+      {/* Floating Action Button - Dynamic Contextual FAB */}
       {!isAddPage && (
-        <Link 
-          to={location.pathname.startsWith('/trips/') ? `/add?tripId=${location.pathname.split('/')[2]}` : "/add"}
-          className="fixed right-6 bottom-24 z-30 w-14 h-14 bg-primary text-white rounded-full shadow-2xl shadow-primary/40 flex items-center justify-center active:scale-90 transition-all animate-in zoom-in duration-300"
+        <Link
+          to={fab.to}
+          state={fab.state}
+          className="fixed right-6 bottom-24 z-30 w-14 h-14 bg-primary text-white rounded-full shadow-2xl shadow-primary/40 flex items-center justify-center active:scale-90 transition-all animate-in zoom-in duration-300 group"
+          title={fab.label}
         >
           <div className="relative">
-            <Camera size={24} strokeWidth={2.5} />
+            {fab.icon}
             <div className="absolute -top-1 -right-1 w-4 h-4 bg-white text-primary rounded-full flex items-center justify-center">
-              <Plus size={10} strokeWidth={4} />
+              {fab.badgeIcon}
             </div>
           </div>
         </Link>

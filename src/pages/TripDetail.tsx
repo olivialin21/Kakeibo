@@ -1,58 +1,65 @@
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
-import { ChevronLeft, Receipt, Calendar, ShoppingBag, PieChart as PieChartIcon, X, TrendingUp, BarChart2, Trash2 } from 'lucide-react';
-import { useState } from 'react';
-import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, Tooltip } from 'recharts';
+import { ChevronLeft, Receipt, Calendar, ShoppingBag, PieChart as PieChartIcon, X, TrendingUp, BarChart2, Trash2, Loader2 } from 'lucide-react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import CategoryPieChart from '../components/charts/CategoryPieChart';
+import type { PieChartData } from '../components/charts/CategoryPieChart';
+import DailyTrendBarChart from '../components/charts/DailyTrendBarChart';
+import type { BarChartData } from '../components/charts/DailyTrendBarChart';
+import { formatToTwd, groupReceiptsByDate } from '../utils/formatters';
 
 export default function TripDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [limit, setLimit] = useState(20);
+  const observerRef = useRef<HTMLDivElement>(null);
+
   const trip = useLiveQuery(() => id ? db.trips.get(id) : undefined, [id]);
-  const receipts = useLiveQuery(() => id ? db.receipts.where('tripId').equals(id).reverse().toArray() : [], [id]);
+  
+  // Get ALL receipts for this trip (necessary for full stats and consistent sorting)
+  const allReceipts = useLiveQuery(
+    () => id ? db.receipts.where('tripId').equals(id).toArray() : [],
+    [id]
+  );
+  
+  // Sorted receipts (latest first)
+  const sortedReceipts = useMemo(() => {
+    if (!allReceipts) return [];
+    return [...allReceipts].sort((a, b) => b.date - a.date);
+  }, [allReceipts]);
+
+  // Paginated receipts for display
+  const paginatedReceipts = useMemo(() => {
+    return sortedReceipts.slice(0, limit);
+  }, [sortedReceipts, limit]);
+
+  const totalReceiptsCount = allReceipts?.length || 0;
+  const hasMore = paginatedReceipts.length < totalReceiptsCount;
   
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
-  
-  // Hooks must be at the top level
   const categories = useLiveQuery(() => db.categories.toArray());
   const receiptItems = useLiveQuery(() => db.receiptItems.toArray());
 
-  if (!trip || !receipts) return null;
+  const handleObserver = useCallback((entries: IntersectionObserverEntry[]) => {
+    const [target] = entries;
+    if (target.isIntersecting && hasMore) {
+      setLimit(prev => prev + 20);
+    }
+  }, [hasMore]);
 
-  const totalJPY = receipts.reduce((s, r) => s + r.totalAmount, 0);
-  const totalTWD = receipts.reduce((s, r) => s + (r.manualTwdAmount ?? Math.round(r.totalAmount * 0.21)), 0);
-  
-  // Trip Analysis Data
-  // Calculate category distribution for this trip
-  const categoryData = categories && receipts && receiptItems ? categories.map(cat => {
-    const tripReceiptIds = new Set(receipts.map(r => r.id));
-    const catItems = receiptItems.filter(item => item.categoryId === cat.id && tripReceiptIds.has(item.receiptId));
-    const total = catItems.reduce((s, i) => s + i.originalPrice, 0);
-    return { name: cat.name, value: total, color: cat.color };
-  }).filter(d => d.value > 0).sort((a, b) => b.value - a.value) : [];
+  useEffect(() => {
+    const element = observerRef.current;
+    if (!element) return;
+    const observer = new IntersectionObserver(handleObserver, { threshold: 0.1 });
+    observer.observe(element);
+    return () => observer.unobserve(element);
+  }, [handleObserver]);
 
-  // Calculate daily spending
-  const dailyData: Record<string, number> = {};
-  receipts?.forEach(r => {
-    const d = new Date(r.date).toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric' });
-    dailyData[d] = (dailyData[d] || 0) + r.totalAmount;
-  });
-  const barData = Object.entries(dailyData).map(([date, amount]) => ({ date, amount }));
-
-  // Report Stats
-  const daysCount = Math.max(1, Math.ceil((new Date().getTime() - new Date(trip.startDate).getTime()) / (1000 * 60 * 60 * 24)));
-  const dailyAvg = Math.round(totalJPY / daysCount);
-  const maxExpense = receipts.length > 0 ? Math.max(...receipts.map(r => r.totalAmount)) : 0;
-
-  // Group receipts by date for consistent UI with Home page
-  const groupedReceipts: Record<string, typeof receipts> = {};
-  receipts?.forEach(r => {
-    const dateKey = new Date(r.date).toLocaleDateString('zh-TW', { 
-      year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' 
-    });
-    if (!groupedReceipts[dateKey]) groupedReceipts[dateKey] = [];
-    groupedReceipts[dateKey]!.push(r);
-  });
+  // Group current batch of receipts by date - MOVED UP to follow Rules of Hooks
+  const groupedReceipts = useMemo(() => {
+    return groupReceiptsByDate(paginatedReceipts);
+  }, [paginatedReceipts]);
 
   const handleDeleteReceipt = async (id: string, e: React.MouseEvent) => {
     e.preventDefault();
@@ -72,13 +79,70 @@ export default function TripDetail() {
     if (!confirm(`確定要刪除「${trip.name}」這趟旅行嗎？\n(收據將會保留但不再關聯此旅行)`)) return;
 
     await db.transaction('rw', db.trips, db.receipts, async () => {
-      // Unlink receipts instead of deleting them
       await db.receipts.where('tripId').equals(id).modify({ tripId: undefined });
       await db.trips.delete(id);
     });
     
     navigate('/trips');
   };
+
+  // Stats calculation based on all receipts
+  const totalJPY = useMemo(() => allReceipts ? allReceipts.reduce((s, r) => s + r.totalAmount, 0) : 0, [allReceipts]);
+  const totalTWD = useMemo(() => allReceipts ? allReceipts.reduce((s, r) => s + formatToTwd(r.totalAmount, r.manualTwdAmount), 0) : 0, [allReceipts]);
+  
+  const categoryData: PieChartData[] = useMemo(() => {
+    if (!categories || !allReceipts || !receiptItems) return [];
+    
+    return categories.map(cat => {
+      const tripReceiptIds = new Set(allReceipts.map(r => r.id));
+      const catItems = receiptItems.filter(item => item.categoryId === cat.id && tripReceiptIds.has(item.receiptId));
+      
+      const jpyTotal = catItems.reduce((s, i) => s + i.originalPrice, 0);
+      const twdTotal = catItems.reduce((s, item) => {
+        const receipt = allReceipts.find(r => r.id === item.receiptId);
+        if (!receipt) return s;
+        const receiptTwd = formatToTwd(receipt.totalAmount, receipt.manualTwdAmount);
+        const proportion = receipt.totalAmount > 0 ? item.originalPrice / receipt.totalAmount : 0;
+        return s + (receiptTwd * proportion);
+      }, 0);
+
+      return { 
+        name: cat.name, 
+        value: jpyTotal, 
+        displayValue: Math.round(twdTotal),
+        color: cat.color 
+      };
+    }).filter(d => d.value > 0).sort((a, b) => b.value - a.value);
+  }, [categories, allReceipts, receiptItems]);
+
+  const barData: BarChartData[] = useMemo(() => {
+    if (!allReceipts) return [];
+    
+    const dailyData: Record<string, number> = {};
+    allReceipts.forEach(r => {
+      const d = new Date(r.date).toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric' });
+      dailyData[d] = (dailyData[d] || 0) + r.totalAmount;
+    });
+    
+    return Object.entries(dailyData)
+      .sort((a, b) => {
+        const [m1, d1] = a[0].split('/').map(Number);
+        const [m2, d2] = b[0].split('/').map(Number);
+        return m1 !== m2 ? m1 - m2 : d1 - d2;
+      })
+      .map(([date, amount]) => ({ date, amount }));
+  }, [allReceipts]);
+
+  const daysCount = useMemo(() => {
+    if (!trip) return 1;
+    return Math.max(1, Math.ceil((new Date().getTime() - new Date(trip.startDate).getTime()) / (1000 * 60 * 60 * 24)));
+  }, [trip]);
+
+  const dailyAvg = useMemo(() => Math.round(totalJPY / daysCount), [totalJPY, daysCount]);
+  const maxExpense = useMemo(() => allReceipts && allReceipts.length > 0 ? Math.max(...allReceipts.map(r => r.totalAmount)) : 0, [allReceipts]);
+
+  // EARLY RETURN - must be after all Hooks
+  if (!trip || !allReceipts) return null;
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
@@ -110,7 +174,7 @@ export default function TripDetail() {
         <div className="flex items-center justify-between mb-8">
           <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em]">旅行結算報表</h3>
           <div className="px-3 py-1 bg-primary/5 text-primary rounded-full text-[9px] font-bold">
-            {receipts.length} 筆消費
+            {totalReceiptsCount} 筆消費
           </div>
         </div>
 
@@ -143,74 +207,53 @@ export default function TripDetail() {
         </div>
       </div>
 
-      {/* Visual Analytics Section (The new part) */}
+      {/* Visual Analytics Section */}
       <div className="grid grid-cols-1 gap-4">
         <div className="bg-white dark:bg-gray-800 p-6 rounded-[2rem] border border-gray-100 dark:border-gray-700 shadow-sm">
-          <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-6 flex items-center">
+          <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] mb-6 flex items-center">
             <PieChartIcon size={12} className="mr-2" /> 支出分布 (類別)
           </h4>
-          <div className="h-40 flex items-center">
-            <div className="w-1/2 h-full">
-              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                <PieChart>
-                  <Pie
-                    data={categoryData}
-                    innerRadius={35}
-                    outerRadius={55}
-                    paddingAngle={5}
-                    dataKey="value"
-                  >
-                    {categoryData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="w-1/2 space-y-2 max-h-32 overflow-y-auto">
-              {categoryData.map((cat, i) => (
-                <div key={i} className="flex items-center justify-between">
-                  <div className="flex items-center min-w-0">
-                    <div className="w-1.5 h-1.5 rounded-full mr-2 shrink-0" style={{ backgroundColor: cat.color }} />
-                    <span className="text-[10px] font-medium text-gray-500 truncate">{cat.name}</span>
-                  </div>
-                  <span className="text-[10px] font-bold text-gray-700 dark:text-gray-200 ml-2">¥{cat.value.toLocaleString()}</span>
-                </div>
-              ))}
-            </div>
-          </div>
+          <CategoryPieChart 
+            data={categoryData.map(d => ({
+              ...d,
+              value: d.displayValue as number, // Swap values to show TWD as primary
+              displayValue: d.value // Show JPY as secondary
+            }))}
+            totalLabel="旅行總計"
+            totalValue={`NT$${totalTWD.toLocaleString()}`}
+            height={200}
+            valuePrefix="NT$"
+            displayValuePrefix="¥"
+          />
         </div>
 
         <div className="bg-white dark:bg-gray-800 p-6 rounded-[2rem] border border-gray-100 dark:border-gray-700 shadow-sm">
-          <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-6 flex items-center">
+          <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] mb-6 flex items-center">
             <BarChart2 size={12} className="mr-2" /> 每日消費趨勢
           </h4>
-          <div className="h-32 w-full">
-            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-              <BarChart data={barData}>
-                <XAxis dataKey="date" tick={{fontSize: 8}} axisLine={false} tickLine={false} />
-                <Tooltip 
-                  contentStyle={{ borderRadius: '12px', border: 'none', fontSize: '10px', fontWeight: 'bold' }}
-                  cursor={{fill: 'rgba(0,0,0,0.02)'}}
-                  formatter={(val: any) => [`¥${val.toLocaleString()}`, '金額']}
-                />
-                <Bar dataKey="amount" fill="var(--color-primary)" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          <DailyTrendBarChart 
+            data={barData.map(d => ({
+              ...d,
+              amount: allReceipts.filter(r => new Date(r.date).toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric' }) === d.date)
+                .reduce((s, r) => s + formatToTwd(r.totalAmount, r.manualTwdAmount), 0)
+            }))}
+            height={160}
+            valuePrefix="NT$"
+            fontSize={9}
+          />
         </div>
       </div>
 
       {/* Receipt List */}
       <div className="space-y-4">
         <div className="flex justify-between items-center px-1">
-          <h3 className="font-medium text-base text-gray-800 dark:text-gray-100 tracking-tight">旅行明細 ({receipts.length})</h3>
+          <h3 className="font-medium text-base text-gray-800 dark:text-gray-100 tracking-tight">旅行明細 ({totalReceiptsCount})</h3>
           <Link to={`/add?tripId=${id}`} className="text-[9px] font-semibold text-primary uppercase tracking-widest bg-primary/5 px-3 py-1.5 rounded-full">
             + 繼續記帳
           </Link>
         </div>
         
-        {receipts.length === 0 ? (
+        {totalReceiptsCount === 0 ? (
           <div className="text-center py-12 bg-gray-50/20 dark:bg-gray-800/10 rounded-3xl border border-dashed border-gray-100 dark:border-gray-800 text-gray-400 text-xs font-medium">
             這趟旅行尚未有任何關聯的收據
           </div>
@@ -222,9 +265,13 @@ export default function TripDetail() {
                 <div key={dateLabel}>
                   <p className="text-[10px] text-gray-400 font-semibold ml-1 mb-2 tracking-widest uppercase">{dateLabel}</p>
                   <div className="space-y-2.5">
-                    {dayReceipts.sort((a, b) => b.date - a.date).map(r => (
+                    {dayReceipts.map(r => (
                     <div key={r.id} className="relative group">
-                      <Link to={`/edit/${r.id}`} className="bg-white dark:bg-gray-800 flex items-center p-4 rounded-2xl border border-gray-100 dark:border-gray-700 active:bg-gray-50 transition-all shadow-[0_2px_8px_rgba(0,0,0,0.02)] hover:border-primary/20">
+                      <Link 
+                        to={`/edit/${r.id}`} 
+                        state={{ from: `/trips/${id}` }}
+                        className="bg-white dark:bg-gray-800 flex items-center p-4 rounded-2xl border border-gray-100 dark:border-gray-700 active:bg-gray-50 transition-all shadow-[0_2px_8px_rgba(0,0,0,0.02)] hover:border-primary/20"
+                      >
                         <div className="w-10 h-10 rounded-xl bg-gray-50 dark:bg-gray-900 flex items-center justify-center mr-4 shrink-0 border border-gray-50 dark:border-gray-700 overflow-hidden shadow-inner">
                           {r.imageBlobs && r.imageBlobs.length > 0 && r.imageBlobs[0] instanceof Blob ? (
                             <img
@@ -247,18 +294,11 @@ export default function TripDetail() {
                           <h4 className="font-semibold text-[13px] truncate text-gray-800 dark:text-gray-100 leading-tight mb-1">
                             {r.shopName || '未命名收據'}
                           </h4>
-                          <div className="flex items-center space-x-2">
-                            {(r.tax8Amount > 0 || r.tax10Amount > 0) && (
-                              <span className="text-[7px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-semibold uppercase tracking-tighter">
-                                Tax Included
-                              </span>
-                            )}
-                          </div>
                         </div>
                         
                         <div className="text-right ml-2 shrink-0 mr-3">
                           <div className="font-semibold text-[15px] text-gray-900 dark:text-white tracking-tighter">
-                            NT$ {(r.manualTwdAmount ?? Math.round(r.totalAmount * 0.21)).toLocaleString()}
+                            NT$ {formatToTwd(r.totalAmount, r.manualTwdAmount).toLocaleString()}
                           </div>
                           <div className="text-[10px] text-gray-400 font-medium mt-0.5 opacity-60">
                             ¥ {r.totalAmount.toLocaleString()}
@@ -278,6 +318,18 @@ export default function TripDetail() {
                 </div>
               </div>
             ))}
+
+            {/* Infinite Scroll Sentinel */}
+            <div ref={observerRef} className="py-6 flex justify-center">
+              {hasMore ? (
+                <div className="flex items-center space-x-2 text-gray-400">
+                  <Loader2 size={16} className="animate-spin" />
+                  <span className="text-[10px] font-bold uppercase tracking-widest">載入中...</span>
+                </div>
+              ) : totalReceiptsCount > 0 ? (
+                <p className="text-[10px] text-gray-300 font-bold uppercase tracking-[0.2em] text-center">已載入所有收據</p>
+              ) : null}
+            </div>
           </div>
         )}
       </div>

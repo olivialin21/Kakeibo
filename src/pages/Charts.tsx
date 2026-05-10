@@ -1,9 +1,12 @@
 import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
-import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, Tooltip } from 'recharts';
 import { TrendingUp, TrendingDown, ShoppingBag, CalendarDays, BarChart2, FileText, Info } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import CategoryPieChart from '../components/charts/CategoryPieChart';
+import type { PieChartData } from '../components/charts/CategoryPieChart';
+import DailyTrendBarChart from '../components/charts/DailyTrendBarChart';
+import type { BarChartData } from '../components/charts/DailyTrendBarChart';
 
 export default function Charts() {
   const receipts = useLiveQuery(() => db.receipts.toArray());
@@ -62,7 +65,7 @@ export default function Charts() {
     const entry = categoryTotals[item.categoryId];
     entry.count++;
     entry.jpy += item.originalPrice;
-    
+
     if (receipt.totalAmount > 0) {
       const receiptTWD = receipt.manualTwdAmount ?? Math.round(receipt.totalAmount * 0.21);
       const proportion = item.originalPrice / receipt.totalAmount;
@@ -72,12 +75,12 @@ export default function Charts() {
     }
   });
 
-  const pieData = Object.entries(categoryTotals).map(([catId, data]) => {
+  const pieData: PieChartData[] = Object.entries(categoryTotals).map(([catId, data]) => {
     const cat = categories.find(c => c.id === catId);
     return {
       name: cat?.name || '未分類',
       value: Math.round(data.twd),
-      jpy: data.jpy,
+      displayValue: data.jpy,
       count: data.count,
       color: cat?.color || '#a8a29e'
     };
@@ -90,12 +93,12 @@ export default function Charts() {
     const d = new Date(r.date);
     const dateStr = `${d.getMonth() + 1}/${d.getDate()}`;
     if (!dateTotals[dateStr]) dateTotals[dateStr] = { jpy: 0, twd: 0 };
-    
+
     dateTotals[dateStr].jpy += r.totalAmount;
     dateTotals[dateStr].twd += r.manualTwdAmount ?? Math.round(r.totalAmount * 0.21);
   });
 
-  const barData = Object.entries(dateTotals)
+  const barData: BarChartData[] = Object.entries(dateTotals)
     .sort((a, b) => {
       const [m1, d1] = a[0].split('/').map(Number);
       const [m2, d2] = b[0].split('/').map(Number);
@@ -118,7 +121,7 @@ export default function Charts() {
       <div className="flex flex-col space-y-4 px-1">
         <div className="flex justify-between items-center">
           <h2 className="text-xl font-bold tracking-tight text-gray-800 dark:text-gray-100">財務分析</h2>
-          <select 
+          <select
             value={selectedMonth}
             onChange={e => setSelectedMonth(e.target.value)}
             className="px-3 py-1.5 rounded-full border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 text-[11px] font-bold outline-none shadow-sm text-primary"
@@ -131,14 +134,14 @@ export default function Charts() {
 
         {/* Tab Switcher */}
         <div className="flex bg-gray-100 dark:bg-gray-800 p-1 rounded-2xl">
-          <button 
+          <button
             onClick={() => setActiveTab('visual')}
             className={`flex-1 flex items-center justify-center space-x-2 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'visual' ? 'bg-white dark:bg-gray-700 shadow-sm text-primary' : 'text-gray-400'}`}
           >
             <BarChart2 size={14} />
             <span>趨勢分析</span>
           </button>
-          <button 
+          <button
             onClick={() => setActiveTab('report')}
             className={`flex-1 flex items-center justify-center space-x-2 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'report' ? 'bg-white dark:bg-gray-700 shadow-sm text-primary' : 'text-gray-400'}`}
           >
@@ -150,7 +153,7 @@ export default function Charts() {
 
       <AnimatePresence mode="wait">
         {activeTab === 'visual' ? (
-          <motion.div 
+          <motion.div
             key="visual"
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
@@ -174,7 +177,7 @@ export default function Charts() {
                 </div>
                 <div className="text-3xl font-bold tracking-tight">NT$ {totalEstTWD.toLocaleString()}</div>
               </div>
-              
+
               <div className="glass rounded-2xl p-5 shadow-sm border border-gray-100 dark:border-gray-800">
                 <div className="flex items-center space-x-1.5 mb-2">
                   <CalendarDays size={14} className="text-primary opacity-70" />
@@ -182,7 +185,7 @@ export default function Charts() {
                 </div>
                 <div className="text-xl font-bold">{filteredReceipts.length} <span className="text-xs font-medium text-gray-400 ml-1">張</span></div>
               </div>
-              
+
               <div className="glass rounded-2xl p-5 shadow-sm border border-gray-100 dark:border-gray-800">
                 <div className="text-[10px] text-gray-400 font-bold mb-2 uppercase tracking-widest">日圓總額</div>
                 <div className="text-xl font-bold truncate">¥{totalJPY.toLocaleString()}</div>
@@ -192,58 +195,24 @@ export default function Charts() {
             {/* Category Pie Chart */}
             <div className="glass rounded-[2rem] p-6 shadow-sm space-y-6 border border-gray-100 dark:border-gray-800">
               <h3 className="font-bold text-sm tracking-tight">分類支出比例</h3>
-              {pieData.length > 0 ? (
-                <>
-                  <div className="h-52 relative">
-                    <ResponsiveContainer width="100%" height={208}>
-                      <PieChart>
-                        <Pie
-                          data={pieData}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={55}
-                          outerRadius={75}
-                          paddingAngle={4}
-                          dataKey="value"
-                          stroke="none"
-                        >
-                          {pieData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.color} />
-                          ))}
-                        </Pie>
-                        <Tooltip 
-                          formatter={(value: any) => `NT$ ${Math.round(Number(value)).toLocaleString()}`} 
-                          contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 8px 24px rgba(0,0,0,0.1)', fontSize: '11px', fontWeight: 'bold' }}
-                        />
-                      </PieChart>
-                    </ResponsiveContainer>
-                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none">
-                      <p className="text-[9px] text-gray-400 font-bold uppercase">總計</p>
-                      <p className="text-sm font-bold">NT${totalPieValue.toLocaleString()}</p>
-                    </div>
-                  </div>
-                  <div className="grid gap-2.5">
-                    {pieData.map((d, i) => (
-                      <div key={i} className="flex items-center bg-gray-50/50 dark:bg-gray-800/40 p-3.5 rounded-2xl border border-gray-100/50 dark:border-gray-700/50">
-                        <span className="w-2.5 h-2.5 rounded-full shrink-0 mr-3.5 shadow-sm" style={{ backgroundColor: d.color }} />
-                        <span className="text-[11px] font-bold flex-1 truncate">{d.name}</span>
-                        <div className="text-right ml-2">
-                          <div className="text-[12px] font-bold">NT$ {d.value.toLocaleString()}</div>
-                          <div className="text-[8px] text-gray-400 font-bold uppercase tracking-tighter opacity-60">
-                            {totalPieValue > 0 ? Math.round((d.value / totalPieValue) * 100) : 0}% · ¥{d.jpy.toLocaleString()}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              ) : (
-                <p className="text-center text-gray-400 py-16 text-xs font-medium">尚無記帳資料</p>
-              )}
+              <CategoryPieChart 
+                data={pieData}
+                totalLabel="總計"
+                totalValue={`NT$${totalPieValue.toLocaleString()}`}
+                height={200}
+              />
+            </div>
+
+            <div className="glass rounded-[2rem] p-6 shadow-sm border border-gray-100 dark:border-gray-800">
+              <h3 className="font-bold text-sm tracking-tight mb-6">本月每日消費趨勢</h3>
+              <DailyTrendBarChart 
+                data={barData}
+                height={160}
+              />
             </div>
           </motion.div>
         ) : (
-          <motion.div 
+          <motion.div
             key="report"
             initial={{ opacity: 0, x: 10 }}
             animate={{ opacity: 1, x: 0 }}
@@ -308,7 +277,7 @@ export default function Charts() {
                         <span className="font-bold text-gray-700 dark:text-gray-300">{d.name}</span>
                       </div>
                       <div className="flex space-x-4">
-                        <span className="font-medium text-gray-400">¥{d.jpy.toLocaleString()}</span>
+                        <span className="font-medium text-gray-400">¥{d.displayValue?.toLocaleString()}</span>
                         <span className="font-bold text-gray-900 dark:text-white min-w-[70px] text-right">NT${d.value.toLocaleString()}</span>
                       </div>
                     </div>
@@ -320,13 +289,13 @@ export default function Charts() {
             {/* Daily Trend Chart (Minimized for Report) */}
             <div className="glass rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
               <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-4">本月每日花費趨勢</h3>
-              <div className="h-32 w-full">
-                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                  <BarChart data={barData}>
-                    <Bar dataKey="amount" fill="var(--color-primary)" radius={[2, 2, 0, 0]} opacity={0.6} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+              <DailyTrendBarChart 
+                data={barData}
+                height={128}
+                fontSize={8}
+                showTooltip={false}
+                barColor="var(--color-primary-light)"
+              />
             </div>
           </motion.div>
         )}

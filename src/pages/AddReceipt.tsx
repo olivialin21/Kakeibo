@@ -1,14 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
 import { db, type ReceiptItem } from '../db/db';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Save, Camera, Sparkles, Loader2, Plus, X, Plane } from 'lucide-react';
+import { useNavigate, useParams, useSearchParams, useLocation } from 'react-router-dom';
+import { ChevronLeft, Save, Camera, Sparkles, Loader2, Plus, X, Plane } from 'lucide-react';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { Pagination } from 'swiper/modules';
 
 // Import Swiper styles
 import 'swiper/css';
 import 'swiper/css/pagination';
-import './AddReceipt.css'; 
+import './AddReceipt.css';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { motion, AnimatePresence } from 'framer-motion';
 import { convertToStandardImage } from '../utils/receiptParser';
@@ -18,9 +18,13 @@ import { analyzeReceiptWithAI } from '../utils/gemini';
 
 export default function AddReceipt() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
   const initialTripId = searchParams.get('tripId');
+  
+  // Get return path from state
+  const fromPath = location.state?.from;
 
   const categories = useLiveQuery(() => db.categories.toArray());
   const trips = useLiveQuery(() => db.trips.toArray());
@@ -184,7 +188,7 @@ export default function AddReceipt() {
     // Determine final JPY amount (Reverse calculate if empty)
     let finalJpyAmount = Number(totalAmount) || 0;
     const finalTwdAmount = manualTwdAmount ? Number(manualTwdAmount) : undefined;
-    
+
     if (finalJpyAmount === 0 && finalTwdAmount) {
       finalJpyAmount = Math.round(finalTwdAmount / 0.21);
       setTotalAmount(finalJpyAmount.toString());
@@ -226,7 +230,13 @@ export default function AddReceipt() {
       await db.receiptItems.bulkAdd(itemsToSave);
     });
 
-    if (tripId) {
+    handleBack();
+  };
+
+  const handleBack = () => {
+    if (fromPath) {
+      navigate(fromPath);
+    } else if (tripId) {
       navigate(`/trips/${tripId}`);
     } else {
       navigate('/');
@@ -251,15 +261,13 @@ export default function AddReceipt() {
       <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
         <div className="flex flex-col space-y-4 px-1">
           <div className="flex justify-between items-center">
-            <h2 className="text-xl font-semibold tracking-tight">{id ? '編輯收據' : '新增收據'}</h2>
-            <button
-              onClick={handleSave}
-              disabled={isScanning}
-              className="flex items-center space-x-1 px-4 py-2 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-full text-xs font-bold hover:opacity-90 transition-all shadow-md disabled:opacity-50 active:scale-95"
+            <button 
+              onClick={handleBack}
+              className="p-2 bg-white dark:bg-gray-800 rounded-full shadow-sm border border-gray-100 dark:border-gray-700 active:scale-90 transition-transform"
             >
-              <Save size={14} />
-              <span>儲存</span>
+              <ChevronLeft size={18} className="text-gray-500 dark:text-gray-400" />
             </button>
+            <h2 className="text-xl font-semibold tracking-tight">{id ? '編輯收據' : '新增收據'}</h2>
           </div>
 
           <div className="flex gap-2">
@@ -325,7 +333,7 @@ export default function AddReceipt() {
                     />
                     {/* Gradient Overlay */}
                     <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/60 to-transparent pointer-events-none" />
-                    
+
                     <button
                       onClick={() => {
                         const newPreviews = [...imagePreviews];
@@ -339,7 +347,7 @@ export default function AddReceipt() {
                     >
                       <X size={14} />
                     </button>
-                    
+
                     <div className="absolute bottom-10 right-4 px-2 py-1 bg-black/30 backdrop-blur-md rounded-lg text-[9px] text-white/90 font-bold tracking-widest shadow-sm pointer-events-none z-10">
                       {index + 1} / {imagePreviews.length}
                     </div>
@@ -605,7 +613,7 @@ export default function AddReceipt() {
                       value={item.discount || ''}
                       onChange={e => handleItemChange(item.id!, 'discount', e.target.value)}
                       placeholder="0"
-                      className="w-full pl-4 pr-2 py-2.5 rounded-xl border border-gray-50 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 focus:bg-white dark:focus:bg-gray-800 focus:ring-1 focus:ring-primary outline-none transition-all text-sm font-semibold text-left text-red-500"
+                      className="w-full pl-4 pr-2 py-2.5 rounded-xl border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 focus:bg-white dark:focus:bg-gray-800 focus:ring-1 focus:ring-primary outline-none transition-all text-sm font-semibold text-left text-red-500"
                     />
                   </div>
                 </div>

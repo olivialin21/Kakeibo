@@ -70,13 +70,15 @@ db.version(3).stores({
   trips: 'id, name'
 });
 
-// Pre-populate some default categories with Green-based theme
+// Pre-populate some default categories with your Theme colors
 db.on('populate', async () => {
   await db.categories.bulkAdd([
-    { id: crypto.randomUUID(), name: '食品', color: '#5b7a6f', icon: 'utensils' },
-    { id: crypto.randomUUID(), name: '交通', color: '#7da093', icon: 'train' },
-    { id: crypto.randomUUID(), name: '日用品', color: '#a3b5ad', icon: 'shopping-bag' },
-    { id: crypto.randomUUID(), name: '娛樂', color: '#4a6b5e', icon: 'gamepad-2' },
+    { id: crypto.randomUUID(), name: '食品', color: '#5b7a6f', icon: 'utensils' }, // primary
+    { id: crypto.randomUUID(), name: '交通', color: '#7da093', icon: 'train' }, // primary-light
+    { id: crypto.randomUUID(), name: '藥妝', color: '#c4956a', icon: 'pill' }, // accent
+    { id: crypto.randomUUID(), name: '日用品', color: '#a3b5ad', icon: 'shopping-bag' }, // muted
+    { id: crypto.randomUUID(), name: '娛樂', color: '#4a6b5e', icon: 'gamepad-2' }, // primary-dark
+    { id: crypto.randomUUID(), name: '衣物', color: '#78716c', icon: 'shirt' }, // gray
   ]);
 });
 

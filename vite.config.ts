@@ -12,8 +12,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
       manifest: {
-        name: '日幣記帳助手',
-        short_name: '記帳助手',
+        name: '家計簿',
+        short_name: '家計簿',
         description: 'AI 智慧收據記帳 (Gemini 驅動)',
         theme_color: '#5b7a6f',
         background_color: '#fafafa',
