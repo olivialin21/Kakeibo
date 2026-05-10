@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
-import { Plus, Edit2, X } from 'lucide-react';
+import { Edit2, X } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const COLORS = [
@@ -11,6 +12,8 @@ const COLORS = [
 
 export default function Categories() {
   const categories = useLiveQuery(() => db.categories.toArray());
+  const location = useLocation();
+
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [editColor, setEditColor] = useState('');
@@ -18,6 +21,13 @@ export default function Categories() {
   const [isAdding, setIsAdding] = useState(false);
   const [newName, setNewName] = useState('');
   const [newColor, setNewColor] = useState(COLORS[0]);
+
+  // Handle FAB trigger from App.tsx
+  useEffect(() => {
+    if (location.state?.openAddModal) {
+      setIsAdding(true);
+    }
+  }, [location.state]);
 
   const handleAdd = async () => {
     if (!newName.trim()) return;
@@ -59,14 +69,6 @@ export default function Categories() {
     <div className="space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
       <div className="flex justify-between items-center px-1">
         <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 tracking-tight">分類管理</h2>
-        {!isAdding && (
-          <button
-            onClick={() => setIsAdding(true)}
-            className="p-2.5 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-full shadow-md transition-transform active:scale-90"
-          >
-            <Plus size={18} />
-          </button>
-        )}
       </div>
 
       {isAdding && (

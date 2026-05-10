@@ -181,9 +181,10 @@ function App() {
         <Link
           to={fab.to}
           state={fab.state}
-          className="fixed right-6 bottom-24 z-30 w-14 h-14 bg-primary text-white rounded-full shadow-2xl shadow-primary/40 flex items-center justify-center active:scale-90 transition-all animate-in zoom-in duration-300 group"
+          className="fixed right-6 bottom-[calc(4rem+env(safe-area-inset-bottom)+1.5rem)] z-30 w-14 h-14 bg-primary text-white rounded-full shadow-2xl shadow-primary/40 flex items-center justify-center active:scale-90 transition-all animate-in zoom-in duration-300 group"
           title={fab.label}
         >
+
           <div className="relative">
             {fab.icon}
             <div className="absolute -top-1 -right-1 w-4 h-4 bg-white text-primary rounded-full flex items-center justify-center">
