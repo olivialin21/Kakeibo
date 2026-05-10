@@ -1,7 +1,7 @@
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
-import { ChevronLeft, Receipt, Calendar, ShoppingBag, PieChart as PieChartIcon, X, TrendingUp, BarChart2, Trash2, Loader2, Pencil, Check, Undo2 } from 'lucide-react';
+import { ChevronLeft, Receipt, Calendar, ShoppingBag, PieChart as PieChartIcon, X, BarChart2, Trash2, Loader2, Pencil, Check, Undo2 } from 'lucide-react';
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import CategoryPieChart from '../components/charts/CategoryPieChart';
 import type { PieChartData } from '../components/charts/CategoryPieChart';
@@ -25,9 +25,7 @@ export default function TripDetail() {
   const allReceipts = useLiveQuery(() => id ? db.receipts.where('tripId').equals(id).toArray() : [], [id]);
   const categories = useLiveQuery(() => db.categories.toArray(), []);
   const receiptItems = useLiveQuery(() => db.receiptItems.toArray(), []);
-
-  const [isDeleting, setIsDeleting] = useState<string | null>(null);
-
+  
   // Initialize edit fields
   useEffect(() => {
     if (trip) {
@@ -65,7 +63,7 @@ export default function TripDetail() {
 
   const totalJPY = useMemo(() => allReceipts ? allReceipts.reduce((s, r) => s + r.totalAmount, 0) : 0, [allReceipts]);
   const totalTWD = useMemo(() => allReceipts ? allReceipts.reduce((s, r) => s + formatToTwd(r.totalAmount, r.manualTwdAmount), 0) : 0, [allReceipts]);
-
+  
   const categoryData: PieChartData[] = useMemo(() => {
     if (!categories || !allReceipts || !receiptItems) return [];
     return categories.map(cat => {
@@ -114,12 +112,10 @@ export default function TripDetail() {
     e.preventDefault();
     e.stopPropagation();
     if (!confirm('確定要刪除這筆收據嗎？')) return;
-    setIsDeleting(receiptId);
     await db.transaction('rw', db.receipts, db.receiptItems, async () => {
       await db.receiptItems.where('receiptId').equals(receiptId).delete();
       await db.receipts.delete(receiptId);
     });
-    setIsDeleting(null);
   };
 
   const handleDeleteTrip = async () => {
@@ -138,11 +134,11 @@ export default function TripDetail() {
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
       <div className="flex items-center justify-between px-1">
-        <div className="flex items-start space-x-3 w-full">
+        <div className="flex items-center space-x-3 w-full">
           <Link to="/trips" className="p-2 bg-white dark:bg-gray-800 rounded-full shadow-sm border border-gray-100 dark:border-gray-700 active:scale-90 transition-transform">
             <ChevronLeft size={18} className="text-gray-500 dark:text-gray-400" />
           </Link>
-
+          
           <div className="flex-1 relative min-h-[50px]">
             <AnimatePresence mode="wait">
               {isEditing ? (
@@ -181,7 +177,7 @@ export default function TripDetail() {
             </AnimatePresence>
           </div>
         </div>
-
+        
         <div className="flex items-center space-x-2 self-start">
           {isEditing ? (
             <>
@@ -236,8 +232,11 @@ export default function TripDetail() {
       <div className="space-y-4">
         <div className="flex justify-between items-center px-1">
           <h3 className="font-medium text-base text-gray-800 dark:text-gray-100 tracking-tight">旅行明細 ({allReceipts.length})</h3>
+          <Link to={`/add?tripId=${id}`} className="text-[9px] font-semibold text-primary uppercase tracking-widest bg-primary/5 px-3 py-1.5 rounded-full">
+            + 繼續記帳
+          </Link>
         </div>
-
+        
         {allReceipts.length === 0 ? (
           <div className="text-center py-12 bg-gray-50/20 dark:bg-gray-800/10 rounded-3xl border border-dashed border-gray-100 dark:border-gray-800 text-gray-400 text-xs font-medium">
             尚無收據
@@ -245,10 +244,10 @@ export default function TripDetail() {
         ) : (
           <div className="space-y-6">
             {Object.entries(groupedReceipts).map(([dateLabel, dayReceipts]) => (
-              <div key={dateLabel}>
-                <p className="text-[10px] text-gray-400 font-semibold ml-1 mb-2 tracking-widest uppercase">{dateLabel}</p>
-                <div className="space-y-2.5">
-                  {dayReceipts.map(r => (
+                <div key={dateLabel}>
+                  <p className="text-[10px] text-gray-400 font-semibold ml-1 mb-2 tracking-widest uppercase">{dateLabel}</p>
+                  <div className="space-y-2.5">
+                    {dayReceipts.map(r => (
                     <div key={r.id} className="relative group">
                       <Link to={`/edit/${r.id}`} state={{ from: `/trips/${id}` }} className="bg-white dark:bg-gray-800 flex items-center p-4 rounded-2xl border border-gray-100 dark:border-gray-700 active:bg-gray-50 transition-all shadow-[0_2px_8px_rgba(0,0,0,0.02)] hover:border-primary/20">
                         <div className="w-10 h-10 rounded-xl bg-gray-50 dark:bg-gray-900 flex items-center justify-center mr-4 shrink-0 border border-gray-50 dark:border-gray-700 overflow-hidden shadow-inner">
