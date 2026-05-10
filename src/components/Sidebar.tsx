@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Moon, Sun, Download, Upload, ShieldCheck, Camera } from 'lucide-react';
+import { X, Moon, Sun, Download, Upload, ShieldCheck, Camera, RefreshCcw } from 'lucide-react';
 import { exportData, importData } from '../utils/dataManagement';
 
 interface SidebarProps {
@@ -8,9 +8,11 @@ interface SidebarProps {
   onClose: () => void;
   isDark: boolean;
   setIsDark: (dark: boolean) => void;
+  needRefresh: boolean;
+  updateServiceWorker: () => void;
 }
 
-export default function Sidebar({ isOpen, onClose, isDark, setIsDark }: SidebarProps) {
+export default function Sidebar({ isOpen, onClose, isDark, setIsDark, needRefresh, updateServiceWorker }: SidebarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -77,6 +79,21 @@ export default function Sidebar({ isOpen, onClose, isDark, setIsDark }: SidebarP
                   <div className={`w-10 h-5 rounded-full relative transition-colors ${isDark ? 'bg-primary' : 'bg-gray-200'}`}>
                     <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${isDark ? 'left-6' : 'left-1'}`} />
                   </div>
+                </button>
+
+                <button
+                  onClick={needRefresh ? updateServiceWorker : () => {
+                    // Check logic - usually browsers check automatically, 
+                    // but we can show a toast or just alert "Already latest"
+                    if (!needRefresh) alert('目前已是最新版本！');
+                  }}
+                  className={`w-full flex items-center justify-between p-3 rounded-xl transition-colors ${needRefresh ? 'bg-primary/10 hover:bg-primary/20' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`}
+                >
+                  <div className="flex items-center space-x-3 text-gray-700 dark:text-gray-200">
+                    <RefreshCcw size={18} className={needRefresh ? 'text-primary animate-spin-slow' : ''} />
+                    <span className="text-sm font-medium">{needRefresh ? '有新版本可用' : '檢查更新'}</span>
+                  </div>
+                  {needRefresh && <span className="w-2 h-2 bg-primary rounded-full animate-pulse" />}
                 </button>
               </div>
 

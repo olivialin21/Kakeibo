@@ -1,18 +1,26 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
-import { Plus, Calendar, MapPin, ChevronRight, Plane, X } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Calendar, MapPin, ChevronRight, Plane, X } from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export default function Trips() {
   const trips = useLiveQuery(() => db.trips.toArray());
   const receipts = useLiveQuery(() => db.receipts.toArray());
+  const location = useLocation();
   
   const [isAdding, setIsAdding] = useState(false);
   const [name, setName] = useState('');
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
-  const [description, setDescription] = useState('');
+  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+
+  // Handle FAB trigger from App.tsx
+  useEffect(() => {
+    if (location.state?.openAddModal) {
+      setIsAdding(true);
+    }
+  }, [location.state]);
 
   const handleAddTrip = async () => {
     if (!name.trim()) return;
@@ -20,11 +28,12 @@ export default function Trips() {
       id: crypto.randomUUID(),
       name: name.trim(),
       startDate: new Date(startDate).getTime(),
-      description: description.trim()
+      endDate: new Date(endDate).getTime()
     });
     setIsAdding(false);
     setName('');
-    setDescription('');
+    setStartDate(new Date().toISOString().split('T')[0]);
+    setEndDate(new Date().toISOString().split('T')[0]);
   };
 
   const handleDeleteTrip = async (id: string, e: React.MouseEvent) => {
@@ -41,17 +50,11 @@ export default function Trips() {
     <div className="space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
       <div className="flex justify-between items-center px-1">
         <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 tracking-tight">旅行群組</h2>
-        <button 
-          onClick={() => setIsAdding(!isAdding)}
-          className="p-2.5 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-full shadow-md transition-transform active:scale-90"
-        >
-          <Plus size={18} />
-        </button>
       </div>
 
       {isAdding && (
         <div className="glass p-5 rounded-2xl border border-gray-100 dark:border-gray-800 space-y-4 mb-2 shadow-sm">
-          <h3 className="text-[10px] font-semibold text-primary flex items-center space-x-2 uppercase tracking-widest">
+          <h3 className="text-[10px] font-bold text-primary flex items-center space-x-2 uppercase tracking-widest">
             <Plane size={12} />
             <span>開啟新旅程</span>
           </h3>
@@ -77,22 +80,31 @@ export default function Trips() {
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-900 focus:ring-1 focus:ring-primary outline-none transition-all text-xs font-medium"
                 />
               </div>
-              <div className="flex items-end">
-                <button 
-                  onClick={handleAddTrip}
-                  className="w-full bg-primary text-white py-2.5 rounded-xl font-medium text-xs shadow-sm active:scale-95 transition-transform"
-                >
-                  儲存旅行
-                </button>
+              <div>
+                <label className="block text-[9px] text-gray-400 font-medium uppercase mb-1 tracking-widest">結束日期</label>
+                <input 
+                  type="date" 
+                  value={endDate}
+                  onChange={e => setEndDate(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-900 focus:ring-1 focus:ring-primary outline-none transition-all text-xs font-medium"
+                />
               </div>
             </div>
+            <div className="flex gap-2">
+              <button 
+                onClick={handleAddTrip}
+                className="flex-[2] bg-primary text-white py-2.5 rounded-xl font-medium text-xs shadow-sm active:scale-95 transition-transform"
+              >
+                儲存旅行
+              </button>
+              <button
+                onClick={() => setIsAdding(false)}
+                className="flex-1 bg-gray-50 dark:bg-gray-800 text-gray-400 py-2.5 rounded-xl text-xs font-medium hover:bg-gray-100 dark:hover:bg-gray-700 active:scale-95 transition-all"
+              >
+                取消
+              </button>
+            </div>
           </div>
-            <button
-              onClick={() => setIsAdding(false)}
-              className="w-full px-6 bg-gray-50 dark:bg-gray-800 text-gray-400 py-2.5 rounded-xl text-[10px] font-medium hover:bg-gray-100 dark:hover:bg-gray-700 active:scale-95 transition-all"
-            >
-              取消
-            </button>
         </div>
       )}
 
@@ -153,11 +165,6 @@ export default function Trips() {
                         <span className="text-[9px] text-gray-400 font-medium">
                           {tripReceipts.length} 筆收據
                         </span>
-                        {trip.description && (
-                          <span className="text-[9px] text-gray-300 italic truncate max-w-[150px]">
-                            {trip.description}
-                          </span>
-                        )}
                       </div>
                     </Link>
 

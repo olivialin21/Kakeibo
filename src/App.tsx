@@ -1,6 +1,8 @@
+/// <reference types="vite-plugin-pwa/client" />
 import { useState, useEffect } from 'react';
+import { useRegisterSW } from 'virtual:pwa-register/react';
 import { Routes, Route, NavLink, useLocation, Link } from 'react-router-dom';
-import { Home, PieChart, Tags, Plane, Plus, Camera, Menu } from 'lucide-react';
+import { Home, PieChart, Tags, Plane, Plus, Camera, Menu, X } from 'lucide-react';
 import HomePage from './pages/Home';
 import AddReceiptPage from './pages/AddReceipt';
 import ChartsPage from './pages/Charts';
@@ -8,8 +10,29 @@ import CategoriesPage from './pages/Categories';
 import TripsPage from './pages/Trips';
 import TripDetailPage from './pages/TripDetail';
 import Sidebar from './components/Sidebar';
+import { AnimatePresence, motion } from 'framer-motion';
 
 function App() {
+  const {
+    offlineReady: [offlineReady, setOfflineReady],
+    needRefresh: [needRefresh, setNeedRefresh],
+    updateServiceWorker,
+  } = useRegisterSW({
+    onRegistered(r: any) {
+      // eslint-disable-next-line no-console
+      console.log('SW Registered: ', r);
+    },
+    onRegisterError(error: any) {
+      // eslint-disable-next-line no-console
+      console.error('SW registration error', error);
+    },
+  });
+
+  const close = () => {
+    setOfflineReady(false);
+    setNeedRefresh(false);
+  };
+
   const [isDark, setIsDark] = useState(() => {
     // Check local storage or system preference on initial load
     if (localStorage.getItem('theme') === 'dark') return true;
@@ -89,10 +112,46 @@ function App() {
         onClose={() => setIsSidebarOpen(false)}
         isDark={isDark}
         setIsDark={setIsDark}
+        needRefresh={needRefresh}
+        updateServiceWorker={() => updateServiceWorker(true)}
       />
 
+      {/* PWA Update Notification Bar */}
+      <AnimatePresence>
+        {(offlineReady || needRefresh) && (
+          <motion.div 
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="fixed top-0 left-0 right-0 z-[100] overflow-hidden"
+          >
+            <div className="bg-primary px-4 py-2 text-white flex items-center justify-between shadow-lg">
+              <div className="flex items-center space-x-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                <span className="text-[10px] font-bold tracking-tight uppercase">
+                  {needRefresh ? '發現新版本內容' : '已可離線使用'}
+                </span>
+              </div>
+              <div className="flex items-center space-x-3">
+                {needRefresh && (
+                  <button 
+                    onClick={() => updateServiceWorker(true)}
+                    className="bg-white text-primary px-3 py-1 rounded-lg text-[10px] font-bold active:scale-95 transition-transform"
+                  >
+                    立即更新
+                  </button>
+                )}
+                <button onClick={close} className="p-1 opacity-60 hover:opacity-100">
+                  <X size={14} />
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Header */}
-      <header className="sticky top-0 z-20 glass border-b border-gray-200/50 dark:border-gray-800/50 px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-3.5 flex justify-between items-center">
+      <header className={`sticky top-0 z-20 glass border-b border-gray-200/50 dark:border-gray-800/50 px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-3.5 flex justify-between items-center transition-all ${offlineReady || needRefresh ? 'mt-9' : ''}`}>
         <div className="flex items-center space-x-3">
           <button
             onClick={() => setIsSidebarOpen(true)}

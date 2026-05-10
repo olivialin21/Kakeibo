@@ -22,7 +22,7 @@ export default function AddReceipt() {
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
   const initialTripId = searchParams.get('tripId');
-  
+
   // Get return path from state
   const fromPath = location.state?.from;
 
@@ -260,8 +260,8 @@ export default function AddReceipt() {
     <>
       <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
         <div className="flex flex-col space-y-4 px-1">
-          <div className="flex justify-between items-center">
-            <button 
+          <div className="flex items-center space-x-3">
+            <button
               onClick={handleBack}
               className="p-2 bg-white dark:bg-gray-800 rounded-full shadow-sm border border-gray-100 dark:border-gray-700 active:scale-90 transition-transform"
             >

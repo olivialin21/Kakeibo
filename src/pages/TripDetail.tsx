@@ -1,7 +1,7 @@
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
-import { ChevronLeft, Receipt, Calendar, ShoppingBag, PieChart as PieChartIcon, X, TrendingUp, BarChart2, Trash2, Loader2 } from 'lucide-react';
+import { ChevronLeft, Receipt, Calendar, ShoppingBag, PieChart as PieChartIcon, X, TrendingUp, BarChart2, Trash2, Loader2, Pencil, Check, Undo2 } from 'lucide-react';
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import CategoryPieChart from '../components/charts/CategoryPieChart';
 import type { PieChartData } from '../components/charts/CategoryPieChart';
@@ -14,8 +14,30 @@ export default function TripDetail() {
   const navigate = useNavigate();
   const [limit, setLimit] = useState(20);
   const observerRef = useRef<HTMLDivElement>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editStartDate, setEditStartDate] = useState('');
+  const [editEndDate, setEditEndDate] = useState('');
 
   const trip = useLiveQuery(() => id ? db.trips.get(id) : undefined, [id]);
+  
+  useEffect(() => {
+    if (trip) {
+      setEditName(trip.name);
+      setEditStartDate(new Date(trip.startDate).toISOString().split('T')[0]);
+      setEditEndDate(trip.endDate ? new Date(trip.endDate).toISOString().split('T')[0] : '');
+    }
+  }, [trip]);
+
+  const handleUpdateTrip = async () => {
+    if (!id || !editName.trim()) return;
+    await db.trips.update(id, {
+      name: editName.trim(),
+      startDate: new Date(editStartDate).getTime(),
+      endDate: editEndDate ? new Date(editEndDate).getTime() : undefined
+    });
+    setIsEditing(false);
+  };
   
   // Get ALL receipts for this trip (necessary for full stats and consistent sorting)
   const allReceipts = useLiveQuery(
@@ -148,25 +170,67 @@ export default function TripDetail() {
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
       {/* Header */}
       <div className="flex items-center justify-between px-1">
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center space-x-3 w-full">
           <Link to="/trips" className="p-2 bg-white dark:bg-gray-800 rounded-full shadow-sm border border-gray-100 dark:border-gray-700 active:scale-90 transition-transform">
             <ChevronLeft size={18} className="text-gray-500 dark:text-gray-400" />
           </Link>
-          <div>
-            <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 tracking-tight">{trip.name}</h2>
-            <p className="text-[9px] font-medium text-gray-400 flex items-center uppercase tracking-widest mt-0.5">
-              <Calendar size={10} className="mr-1.5 opacity-50" />
-              始於 {new Date(trip.startDate).toLocaleDateString()}
-            </p>
-          </div>
+          
+          {isEditing ? (
+            <div className="glass p-5 rounded-2xl border border-gray-100 dark:border-gray-800 space-y-4 mb-2 shadow-sm">
+              <h3 className="text-[10px] font-bold text-primary flex items-center space-x-2 uppercase tracking-widest">
+                <Pencil size={12} />
+                <span>編輯旅行資訊</span>
+              </h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-[9px] text-gray-400 font-medium uppercase mb-1 tracking-widest">旅行名稱</label>
+                  <input
+                    type="text"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-900 focus:ring-1 focus:ring-primary outline-none transition-all text-sm font-medium"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[9px] text-gray-400 font-medium uppercase mb-1 tracking-widest">出發日期</label>
+                    <input type="date" value={editStartDate} onChange={(e) => setEditStartDate(e.target.value)} className="w-full px-4 py-2.5 rounded-xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-900 focus:ring-1 focus:ring-primary outline-none transition-all text-xs font-medium" />
+                  </div>
+                  <div>
+                    <label className="block text-[9px] text-gray-400 font-medium uppercase mb-1 tracking-widest">結束日期</label>
+                    <input type="date" value={editEndDate} onChange={(e) => setEditEndDate(e.target.value)} className="w-full px-4 py-2.5 rounded-xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-900 focus:ring-1 focus:ring-primary outline-none transition-all text-xs font-medium" />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={handleUpdateTrip} className="flex-[2] bg-primary text-white py-2.5 rounded-xl font-medium text-xs shadow-sm active:scale-95 transition-transform">儲存變更</button>
+                  <button onClick={() => setIsEditing(false)} className="flex-1 bg-gray-50 dark:bg-gray-800 text-gray-400 py-2.5 rounded-xl text-xs font-medium hover:bg-gray-100 dark:hover:bg-gray-700 active:scale-95 transition-all">取消</button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 tracking-tight">{trip.name}</h2>
+              <p className="text-[9px] font-medium text-gray-400 flex items-center uppercase tracking-widest mt-0.5">
+                <Calendar size={10} className="mr-1.5 opacity-50" />
+                {new Date(trip.startDate).toLocaleDateString()} ~ {trip.endDate ? new Date(trip.endDate).toLocaleDateString() : '未設定'}
+              </p>
+            </div>
+          )}
         </div>
         
-        <button 
-          onClick={handleDeleteTrip}
-          className="p-2 text-gray-300 hover:text-red-500 active:scale-90 transition-all"
-        >
-          <Trash2 size={18} strokeWidth={1.5} />
-        </button>
+        <div className="flex items-center space-x-2">
+          {isEditing ? (
+            <>
+              <button onClick={handleUpdateTrip} className="p-2 text-green-600 hover:text-green-700 active:scale-90 transition-all"><Check size={18} /></button>
+              <button onClick={() => setIsEditing(false)} className="p-2 text-gray-400 hover:text-gray-600 active:scale-90 transition-all"><Undo2 size={18} /></button>
+            </>
+          ) : (
+            <>
+              <button onClick={() => setIsEditing(true)} className="p-2 text-gray-400 hover:text-primary active:scale-90 transition-all"><Pencil size={18} /></button>
+              <button onClick={handleDeleteTrip} className="p-2 text-gray-300 hover:text-red-500 active:scale-90 transition-all"><Trash2 size={18} /></button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Settlement Report Card */}
