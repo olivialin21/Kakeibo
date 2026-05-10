@@ -1,6 +1,4 @@
 import Tesseract from 'tesseract.js';
-import heic2any from 'heic2any';
-import { heicTo } from 'heic-to';
 import { type ReceiptItem } from '../db/db';
 
 export interface ParsedReceipt {

@@ -477,7 +477,10 @@ export default function AddReceipt() {
                 onChange={e => {
                   const val = e.target.value;
                   setTotalAmount(val);
-                  // Update TWD placeholder/estimated value if needed (optional)
+                  // Auto-convert to TWD ONLY if TWD is empty
+                  if (val && !manualTwdAmount) {
+                    // We only auto-fill if empty. Currently just logic placeholder
+                  }
                 }}
                 className="w-full pl-7 pr-4 py-2.5 rounded-xl border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 focus:bg-white dark:focus:bg-gray-800 focus:ring-1 focus:ring-primary outline-none transition-all font-semibold text-sm text-primary text-left"
                 placeholder="0"
@@ -494,12 +497,10 @@ export default function AddReceipt() {
                 onChange={e => {
                   const val = e.target.value;
                   setManualTwdAmount(val);
-                  // Real-time bidirectional conversion: If typing TWD, update JPY
-                  if (val) {
+                  // Auto-convert to JPY ONLY if JPY is empty
+                  if (val && !totalAmount) {
                     const jpy = Math.round(Number(val) / 0.21);
                     setTotalAmount(jpy.toString());
-                  } else {
-                    setTotalAmount("");
                   }
                 }}
                 className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 focus:bg-white dark:focus:bg-gray-800 focus:ring-1 focus:ring-primary outline-none transition-all font-semibold text-sm text-left"
