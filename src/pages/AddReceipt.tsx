@@ -198,22 +198,35 @@ export default function AddReceipt() {
     const combinedDateTime = new Date(`${date}T${time}:00`).getTime();
 
     await db.transaction('rw', db.receipts, db.receiptItems, async () => {
-      await db.receipts.put({
-        id: receiptId,
-        date: combinedDateTime,
-        shopName,
-        totalAmount: finalJpyAmount,
-        currency: 'JPY',
-        exchangeRate: 0.21,
-        tax8Amount: Number(tax8Amount) || 0,
-        tax10Amount: Number(tax10Amount) || 0,
-        manualTwdAmount: finalTwdAmount,
-        tripId: tripId || undefined,
-        imageBlobs: imageBlobs
-      });
-
       if (id) {
+        // Update only specific fields to preserve existing imageBlobs if not updated
+        await db.receipts.update(id, {
+          date: combinedDateTime,
+          shopName,
+          totalAmount: finalJpyAmount,
+          currency: 'JPY',
+          exchangeRate: 0.21,
+          tax8Amount: Number(tax8Amount) || 0,
+          tax10Amount: Number(tax10Amount) || 0,
+          manualTwdAmount: finalTwdAmount,
+          tripId: tripId || undefined,
+          imageBlobs: imageBlobs.length > 0 ? imageBlobs : undefined // Keep existing if not providing new
+        });
         await db.receiptItems.where('receiptId').equals(id).delete();
+      } else {
+        await db.receipts.add({
+          id: receiptId,
+          date: combinedDateTime,
+          shopName,
+          totalAmount: finalJpyAmount,
+          currency: 'JPY',
+          exchangeRate: 0.21,
+          tax8Amount: Number(tax8Amount) || 0,
+          tax10Amount: Number(tax10Amount) || 0,
+          manualTwdAmount: finalTwdAmount,
+          tripId: tripId || undefined,
+          imageBlobs: imageBlobs
+        });
       }
 
       const itemsToSave = items.map(item => ({
@@ -435,7 +448,7 @@ export default function AddReceipt() {
                 type="date"
                 value={date}
                 onChange={e => setDate(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 focus:bg-white dark:focus:bg-gray-800 focus:ring-1 focus:ring-primary outline-none transition-all text-sm font-medium"
+                className="w-full px-4 py-2.5 rounded-xl border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 focus:bg-white dark:focus:bg-gray-800 focus:ring-1 focus:ring-primary outline-none transition-all text-sm font-medium [min-height:44px] [-webkit-appearance:none]"
               />
             </div>
             <div>
@@ -444,7 +457,7 @@ export default function AddReceipt() {
                 type="time"
                 value={time}
                 onChange={e => setTime(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 focus:bg-white dark:focus:bg-gray-800 focus:ring-1 focus:ring-primary outline-none transition-all text-sm font-medium"
+                className="w-full px-4 py-2.5 rounded-xl border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 focus:bg-white dark:focus:bg-gray-800 focus:ring-1 focus:ring-primary outline-none transition-all text-sm font-medium [min-height:44px] [-webkit-appearance:none]"
               />
             </div>
           </div>

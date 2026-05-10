@@ -36,10 +36,19 @@ export default function Home() {
 
   const hasMore = (receipts?.length || 0) < (totalCount || 0);
 
+  // 用 ref 追蹤載入狀態，避免多次觸發
+  const isLoadingRef = useRef(false);
+
   const handleObserver = useCallback((entries: IntersectionObserverEntry[]) => {
     const [target] = entries;
-    if (target.isIntersecting && hasMore) {
+    if (target.isIntersecting && hasMore && !isLoadingRef.current) {
+      isLoadingRef.current = true;
       setLimit(prev => prev + 20);
+      
+      // 給予一點時間讓資料載入，之後重置鎖定
+      setTimeout(() => {
+        isLoadingRef.current = false;
+      }, 500);
     }
   }, [hasMore]);
 
@@ -47,7 +56,10 @@ export default function Home() {
     const element = observerRef.current;
     if (!element) return;
 
-    const observer = new IntersectionObserver(handleObserver, { threshold: 0.1 });
+    const observer = new IntersectionObserver(handleObserver, { 
+      threshold: 0.1,
+      rootMargin: '200px' // 提早 200px 載入，減少卡頓感
+    });
     observer.observe(element);
     return () => observer.unobserve(element);
   }, [handleObserver]);
