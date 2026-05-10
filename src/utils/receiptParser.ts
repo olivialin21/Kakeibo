@@ -38,45 +38,14 @@ function applyOcrFilters(source: HTMLImageElement | HTMLCanvasElement | ImageBit
   return canvas.toDataURL('image/jpeg', 0.9);
 }
 
+import { compressImage } from './imageUtils';
+
 /**
- * Image conversion.
+ * Image conversion and compression.
+ * Reduces image size to save IndexedDB space and improve backup performance.
  */
 export async function convertToStandardImage(file: File | Blob): Promise<string> {
-  const isHeic = file.type.includes('heic') || file.type.includes('heif') || (file instanceof File && /\.heic$/i.test(file.name));
-  if (typeof createImageBitmap === 'function') {
-    try {
-      const bitmap = await createImageBitmap(file);
-      const canvas = document.createElement('canvas');
-      canvas.width = bitmap.width;
-      canvas.height = bitmap.height;
-      canvas.getContext('2d')?.drawImage(bitmap, 0, 0);
-      const url = canvas.toDataURL('image/png');
-      bitmap.close();
-      return url;
-    } catch (e) { /* fallback */ }
-  }
-  if (isHeic) {
-    try {
-      const buffer = await file.arrayBuffer();
-      const convertedBlob = await heicTo({ blob: new Blob([buffer]), type: 'image/jpeg' });
-      return await blobToDataUrl(Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob);
-    } catch (e) {
-      try {
-        const converted = await heic2any({ blob: file, toType: 'image/png' });
-        return await blobToDataUrl(Array.isArray(converted) ? converted[0] : converted);
-      } catch (e2) { console.error('HEIC conversion failed'); }
-    }
-  }
-  return await blobToDataUrl(file);
-}
-
-function blobToDataUrl(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
+  return await compressImage(file, 1600, 0.8);
 }
 
 export async function processReceiptImage(

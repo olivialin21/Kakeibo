@@ -1,25 +1,5 @@
 import { db } from '../db/db';
-
-async function blobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-}
-
-function base64ToBlob(base64: string): Blob {
-  const parts = base64.split(';base64,');
-  const contentType = parts[0].split(':')[1];
-  const raw = window.atob(parts[1]);
-  const rawLength = raw.length;
-  const uInt8Array = new Uint8Array(rawLength);
-  for (let i = 0; i < rawLength; ++i) {
-    uInt8Array[i] = raw.charCodeAt(i);
-  }
-  return new Blob([uInt8Array], { type: contentType });
-}
+import { compressImage, base64ToBlob } from './imageUtils';
 
 export async function exportData() {
   const categories = await db.categories.toArray();
@@ -27,17 +7,27 @@ export async function exportData() {
   const receiptItems = await db.receiptItems.toArray();
   const trips = await db.trips.toArray();
 
-  // Convert multiple imageBlobs to base64 for JSON compatibility
+  console.log('[Export] Starting data export with image compression...');
+
+  // Convert multiple imageBlobs to base64 for JSON compatibility + Auto-compress
   const receipts = await Promise.all(rawReceipts.map(async (r: any) => {
     if (r.imageBlobs && r.imageBlobs.length > 0) {
-      const base64s = await Promise.all(r.imageBlobs.map((blob: Blob) => blobToBase64(blob)));
+      // We use sequential processing or limited concurrency for stability on mobile
+      const base64s: string[] = [];
+      for (const blob of r.imageBlobs) {
+        if (blob instanceof Blob) {
+          // compressImage also converts to DataURL (Base64)
+          const compressed = await compressImage(blob, 1600, 0.8);
+          base64s.push(compressed);
+        }
+      }
       return { ...r, imageBase64s: base64s, imageBlobs: undefined };
     }
     return r;
   }));
 
   const backup = {
-    version: 3, // Increment version
+    version: 3,
     timestamp: Date.now(),
     data: {
       categories,
@@ -54,6 +44,7 @@ export async function exportData() {
   a.download = `Kakeibo_Backup_${new Date().toISOString().split('T')[0]}.json`;
   a.click();
   URL.revokeObjectURL(url);
+  console.log('[Export] Backup file created and downloaded.');
 }
 
 export async function importData(file: File): Promise<boolean> {
@@ -77,29 +68,40 @@ export async function importData(file: File): Promise<boolean> {
           if (backup.data.categories) await db.categories.bulkAdd(backup.data.categories);
 
           if (backup.data.receipts) {
-            const receiptsToRestore = backup.data.receipts.map((r: any) => {
+            const receiptsToRestore = [];
+            
+            for (const r of backup.data.receipts) {
               let processed = { ...r };
+              let sourceBase64s: string[] = [];
+
               if (r.imageBase64s && r.imageBase64s.length > 0) {
-                const { imageBase64s, ...rest } = r;
-                processed = { ...rest, imageBlobs: imageBase64s.map((b: string) => base64ToBlob(b)) };
+                sourceBase64s = r.imageBase64s;
               } else if (r.imageBase64) {
-                // Fallback for old single image format
-                const { imageBase64, ...rest } = r;
-                processed = { ...rest, imageBlobs: [base64ToBlob(imageBase64)] };
+                sourceBase64s = [r.imageBase64];
               }
 
-              // Ensure imageBlobs contains only valid Blobs, otherwise set to undefined
+              if (sourceBase64s.length > 0) {
+                const finalBlobs: Blob[] = [];
+                for (const b64 of sourceBase64s) {
+                  // Safety: Compress again if importing from unknown source, 
+                  // or just convert to blob if we trust the backup
+                  const blob = base64ToBlob(b64);
+                  // Optional: Re-compress here if size is still too large
+                  finalBlobs.push(blob);
+                }
+                const { imageBase64s, imageBase64, ...rest } = processed;
+                processed = { ...rest, imageBlobs: finalBlobs };
+              }
+
+              // Final cleanups
               if (processed.imageBlobs) {
                 processed.imageBlobs = processed.imageBlobs.filter((b: any) => b instanceof Blob);
                 if (processed.imageBlobs.length === 0) delete processed.imageBlobs;
               }
-              // Also clean up legacy single imageBlob if it's not a Blob
-              if (processed.imageBlob && !(processed.imageBlob instanceof Blob)) {
-                delete processed.imageBlob;
-              }
 
-              return processed;
-            });
+              receiptsToRestore.push(processed);
+            }
+            
             await db.receipts.bulkAdd(receiptsToRestore);
           }
 
