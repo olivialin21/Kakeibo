@@ -18,6 +18,7 @@ export interface Receipt {
   tax8Amount: number;
   tax10Amount: number;
   taxType?: 'inclusive' | 'exclusive';
+  /** @deprecated 圖片已不再儲存於資料庫，僅在上傳時作臨時預覽 */
   imageBlobs?: Blob[];
   manualTwdAmount?: number;
   tripId?: string;

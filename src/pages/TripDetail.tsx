@@ -1,32 +1,39 @@
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
-import { ChevronLeft, Receipt, Calendar, ShoppingBag, PieChart as PieChartIcon, X, BarChart2, Trash2, Loader2, Pencil, Check, Undo2 } from 'lucide-react';
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { ChevronLeft, Receipt, Calendar, ShoppingBag, PieChart as PieChartIcon, X, BarChart2, Trash2, Loader2, Pencil, Check, Undo2, CalendarDays } from 'lucide-react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import CategoryPieChart from '../components/charts/CategoryPieChart';
 import type { PieChartData } from '../components/charts/CategoryPieChart';
 import DailyTrendBarChart from '../components/charts/DailyTrendBarChart';
 import type { BarChartData } from '../components/charts/DailyTrendBarChart';
 import { formatToTwd, groupReceiptsByDate } from '../utils/formatters';
+import {
+  getCurrentMonthPrefix,
+  formatMonthLabel,
+  getAvailableMonthsFromDates,
+  getDefaultMonthForReceipts,
+  isDateInMonth,
+} from '../utils/monthUtils';
 import { AnimatePresence, motion } from 'framer-motion';
 
 export default function TripDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [limit, setLimit] = useState(20);
-  const observerRef = useRef<HTMLDivElement>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState('');
   const [editStartDate, setEditStartDate] = useState('');
   const [editEndDate, setEditEndDate] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedMonth, setSelectedMonth] = useState(() => getCurrentMonthPrefix());
+  const lastCalendarMonthRef = useRef(getCurrentMonthPrefix());
+  const monthInitializedRef = useRef(false);
 
-  // ALL Hooks must be called unconditionally here
   const trip = useLiveQuery(() => id ? db.trips.get(id) : undefined, [id]);
   const allReceipts = useLiveQuery(() => id ? db.receipts.where('tripId').equals(id).toArray() : [], [id]);
   const categories = useLiveQuery(() => db.categories.toArray(), []);
   const receiptItems = useLiveQuery(() => db.receiptItems.toArray(), []);
-  
-  // Initialize edit fields
+
   useEffect(() => {
     if (trip) {
       setEditName(trip.name);
@@ -35,56 +42,90 @@ export default function TripDetail() {
     }
   }, [trip]);
 
-  // Derived state (Must be unconditional)
-  const sortedReceipts = useMemo(() => {
-    if (!allReceipts) return [];
-    return [...allReceipts].sort((a, b) => b.date - a.date);
+  useEffect(() => {
+    if (!allReceipts || monthInitializedRef.current) return;
+    setSelectedMonth(getDefaultMonthForReceipts(allReceipts.map(r => r.date)));
+    monthInitializedRef.current = true;
   }, [allReceipts]);
 
-  const paginatedReceipts = useMemo(() => sortedReceipts.slice(0, limit), [sortedReceipts, limit]);
-  const hasMore = paginatedReceipts.length < (allReceipts?.length || 0);
-
-  const handleObserver = useCallback((entries: IntersectionObserverEntry[]) => {
-    const [target] = entries;
-    if (target.isIntersecting && hasMore) {
-      setLimit(prev => prev + 20);
-    }
-  }, [hasMore]);
-
   useEffect(() => {
-    const element = observerRef.current;
-    if (!element) return;
-    const observer = new IntersectionObserver(handleObserver, { threshold: 0.1, rootMargin: '400px' });
-    observer.observe(element);
-    return () => observer.unobserve(element);
-  }, [handleObserver]);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        const calendarMonth = getCurrentMonthPrefix();
+        setSelectedMonth(prev => {
+          if (prev === lastCalendarMonthRef.current && prev !== calendarMonth) {
+            return calendarMonth;
+          }
+          return prev;
+        });
+        lastCalendarMonthRef.current = calendarMonth;
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, []);
 
-  const groupedReceipts = useMemo(() => groupReceiptsByDate(paginatedReceipts), [paginatedReceipts]);
+  const availableMonths = useMemo(() => {
+    if (!allReceipts) return [];
+    return getAvailableMonthsFromDates(allReceipts.map(r => r.date), getCurrentMonthPrefix());
+  }, [allReceipts]);
+
+  const monthReceipts = useMemo(() => {
+    if (!allReceipts) return [];
+    return allReceipts
+      .filter(r => isDateInMonth(r.date, selectedMonth))
+      .sort((a, b) => b.date - a.date);
+  }, [allReceipts, selectedMonth]);
+
+  const filteredReceipts = useMemo(() => {
+    if (!selectedCategory || !categories || !receiptItems) return monthReceipts;
+
+    const category = categories.find(c => c.name === selectedCategory);
+    if (!category) return monthReceipts;
+
+    const matchingReceiptIds = new Set(
+      receiptItems.filter(item => item.categoryId === category.id).map(item => item.receiptId)
+    );
+
+    return monthReceipts.filter(r => matchingReceiptIds.has(r.id));
+  }, [monthReceipts, selectedCategory, categories, receiptItems]);
+
+  const groupedReceipts = useMemo(() => groupReceiptsByDate(filteredReceipts), [filteredReceipts]);
 
   const totalJPY = useMemo(() => allReceipts ? allReceipts.reduce((s, r) => s + r.totalAmount, 0) : 0, [allReceipts]);
   const totalTWD = useMemo(() => allReceipts ? allReceipts.reduce((s, r) => s + formatToTwd(r.totalAmount, r.manualTwdAmount), 0) : 0, [allReceipts]);
-  
+
+  const monthJPY = useMemo(() => monthReceipts.reduce((s, r) => s + r.totalAmount, 0), [monthReceipts]);
+  const monthTWD = useMemo(() => monthReceipts.reduce((s, r) => s + formatToTwd(r.totalAmount, r.manualTwdAmount), 0), [monthReceipts]);
+
   const categoryData: PieChartData[] = useMemo(() => {
-    if (!categories || !allReceipts || !receiptItems) return [];
+    if (!categories || !monthReceipts.length || !receiptItems) return [];
     return categories.map(cat => {
-      const tripReceiptIds = new Set(allReceipts.map(r => r.id));
+      const tripReceiptIds = new Set(monthReceipts.map(r => r.id));
       const catItems = receiptItems.filter(item => item.categoryId === cat.id && tripReceiptIds.has(item.receiptId));
-      const jpyTotal = catItems.reduce((s, i) => s + i.originalPrice, 0);
-      const twdTotal = catItems.reduce((s, item) => {
-        const receipt = allReceipts.find(r => r.id === item.receiptId);
-        if (!receipt) return s;
+
+      let jpyTotal = 0;
+      let twdTotal = 0;
+
+      catItems.forEach(item => {
+        const receipt = monthReceipts.find(r => r.id === item.receiptId);
+        if (!receipt) return;
+        const actualPrice = item.finalPrice ?? item.originalPrice;
+        const itemTotal = actualPrice * (item.quantity || 1);
+
+        jpyTotal += itemTotal;
         const receiptTwd = formatToTwd(receipt.totalAmount, receipt.manualTwdAmount);
-        const proportion = receipt.totalAmount > 0 ? item.originalPrice / receipt.totalAmount : 0;
-        return s + (receiptTwd * proportion);
-      }, 0);
+        const proportion = receipt.totalAmount > 0 ? itemTotal / receipt.totalAmount : 0;
+        twdTotal += receiptTwd * proportion;
+      });
+
       return { name: cat.name, value: jpyTotal, displayValue: Math.round(twdTotal), color: cat.color };
     }).filter(d => d.value > 0).sort((a, b) => b.value - a.value);
-  }, [categories, allReceipts, receiptItems]);
+  }, [categories, monthReceipts, receiptItems]);
 
   const barData: BarChartData[] = useMemo(() => {
-    if (!allReceipts) return [];
     const dailyData: Record<string, number> = {};
-    allReceipts.forEach(r => {
+    monthReceipts.forEach(r => {
       const d = new Date(r.date).toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric' });
       dailyData[d] = (dailyData[d] || 0) + r.totalAmount;
     });
@@ -95,9 +136,8 @@ export default function TripDetail() {
         return m1 !== m2 ? m1 - m2 : d1 - d2;
       })
       .map(([date, amount]) => ({ date, amount }));
-  }, [allReceipts]);
+  }, [monthReceipts]);
 
-  // Handlers
   const handleUpdateTrip = async () => {
     if (!id || !editName.trim()) return;
     await db.trips.update(id, {
@@ -128,8 +168,10 @@ export default function TripDetail() {
     navigate('/trips');
   };
 
-  // Safe Rendering
   if (!trip || !allReceipts) return <div className="p-10 text-center"><Loader2 className="animate-spin mx-auto text-primary" /></div>;
+
+  const monthLabel = formatMonthLabel(selectedMonth);
+  const hasAnyReceipts = allReceipts.length > 0;
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
@@ -138,7 +180,7 @@ export default function TripDetail() {
           <Link to="/trips" className="p-2 bg-white dark:bg-gray-800 rounded-full shadow-sm border border-gray-100 dark:border-gray-700 active:scale-90 transition-transform">
             <ChevronLeft size={18} className="text-gray-500 dark:text-gray-400" />
           </Link>
-          
+
           <div className="flex-1 relative min-h-[50px]">
             <AnimatePresence mode="wait">
               {isEditing ? (
@@ -177,7 +219,7 @@ export default function TripDetail() {
             </AnimatePresence>
           </div>
         </div>
-        
+
         <div className="flex items-center space-x-2 self-start">
           {isEditing ? (
             <>
@@ -194,22 +236,51 @@ export default function TripDetail() {
       </div>
 
       <div className="relative overflow-hidden rounded-[2rem] bg-white dark:bg-gray-800 p-7 border border-gray-100 dark:border-gray-700 shadow-sm">
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center justify-between mb-6">
           <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em]">旅行結算報表</h3>
-          <div className="px-3 py-1 bg-primary/5 text-primary rounded-full text-[9px] font-bold">{allReceipts.length} 筆消費</div>
         </div>
-        <div className="grid grid-cols-2 gap-y-8 gap-x-12">
-          <div className="space-y-1">
-            <p className="text-[9px] text-gray-400 font-bold uppercase tracking-wider flex items-center">
-              <ShoppingBag size={10} className="mr-1.5 text-primary" /> 日幣總金額
-            </p>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white tracking-tight">¥{totalJPY.toLocaleString()}</p>
+
+        <div className="space-y-6">
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-[9px] text-gray-400 font-bold uppercase tracking-wider">整趟旅程</p>
+              <div className="px-3 py-1 bg-primary/5 text-primary rounded-full text-[9px] font-bold">{allReceipts.length} 筆</div>
+            </div>
+            <div className="grid grid-cols-2 gap-y-4 gap-x-12">
+              <div className="space-y-1">
+                <p className="text-[9px] text-gray-400 font-bold uppercase tracking-wider flex items-center">
+                  <ShoppingBag size={10} className="mr-1.5 text-primary" /> 日幣總金額
+                </p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white tracking-tight">¥{totalJPY.toLocaleString()}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-[9px] text-gray-400 font-bold uppercase tracking-wider flex items-center">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-400 mr-1.5" /> 台幣預估
+                </p>
+                <p className="text-xl font-bold text-gray-700 dark:text-gray-200">NT${totalTWD.toLocaleString()}</p>
+              </div>
+            </div>
           </div>
-          <div className="space-y-1">
-            <p className="text-[9px] text-gray-400 font-bold uppercase tracking-wider flex items-center">
-              <span className="w-1.5 h-1.5 rounded-full bg-green-400 mr-1.5" /> 台幣預估
-            </p>
-            <p className="text-xl font-bold text-gray-700 dark:text-gray-200">NT${totalTWD.toLocaleString()}</p>
+
+          <div className="border-t border-gray-100 dark:border-gray-700 pt-6">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-[9px] text-gray-400 font-bold uppercase tracking-wider">{monthLabel}</p>
+              <div className="px-3 py-1 bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300 rounded-full text-[9px] font-bold">{monthReceipts.length} 筆</div>
+            </div>
+            <div className="grid grid-cols-2 gap-y-4 gap-x-12">
+              <div className="space-y-1">
+                <p className="text-[9px] text-gray-400 font-bold uppercase tracking-wider flex items-center">
+                  <ShoppingBag size={10} className="mr-1.5 text-primary opacity-60" /> 日幣
+                </p>
+                <p className="text-xl font-bold text-gray-800 dark:text-gray-100 tracking-tight">¥{monthJPY.toLocaleString()}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-[9px] text-gray-400 font-bold uppercase tracking-wider flex items-center">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-400/60 mr-1.5" /> 台幣預估
+                </p>
+                <p className="text-lg font-bold text-gray-600 dark:text-gray-300">NT${monthTWD.toLocaleString()}</p>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -217,37 +288,68 @@ export default function TripDetail() {
       <div className="grid grid-cols-1 gap-4">
         <div className="bg-white dark:bg-gray-800 p-6 rounded-[2rem] border border-gray-100 dark:border-gray-700 shadow-sm">
           <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-6 flex items-center">
-            <PieChartIcon size={12} className="mr-2" /> 支出分布
+            <PieChartIcon size={12} className="mr-2" /> {monthLabel}支出分布
           </h4>
-          <CategoryPieChart data={categoryData} layout="horizontal" height={160} valuePrefix="¥" displayValuePrefix="NT$" />
+          <CategoryPieChart
+            data={categoryData}
+            layout="horizontal"
+            height={160}
+            valuePrefix="¥"
+            displayValuePrefix="NT$"
+            selectedCategory={selectedCategory || undefined}
+            onCategoryClick={(cat) => setSelectedCategory(prev => prev === cat ? null : cat)}
+          />
         </div>
         <div className="bg-white dark:bg-gray-800 p-6 rounded-[2rem] border border-gray-100 dark:border-gray-700 shadow-sm">
           <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-6 flex items-center">
-            <BarChart2 size={12} className="mr-2" /> 趨勢
+            <BarChart2 size={12} className="mr-2" /> {monthLabel}趨勢
           </h4>
           <DailyTrendBarChart data={barData} height={128} valuePrefix="¥" fontSize={8} />
         </div>
       </div>
 
       <div className="space-y-4">
-        <div className="flex justify-between items-center px-1">
-          <h3 className="font-medium text-base text-gray-800 dark:text-gray-100 tracking-tight">旅行明細 ({allReceipts.length})</h3>
-          <Link to={`/add?tripId=${id}`} className="text-[9px] font-semibold text-primary uppercase tracking-widest bg-primary/5 px-3 py-1.5 rounded-full">
-            + 繼續記帳
-          </Link>
+        <div className="flex justify-between items-center px-1 gap-2">
+          <h3 className="font-medium text-base text-gray-800 dark:text-gray-100 tracking-tight min-w-0">
+            {selectedCategory ? `${selectedCategory} 明細` : '旅行明細'} ({filteredReceipts.length})
+            {selectedCategory && (
+              <button
+                onClick={() => setSelectedCategory(null)}
+                className="ml-2 text-[10px] text-gray-400 hover:text-primary transition-colors"
+              >
+                清除篩選
+              </button>
+            )}
+          </h3>
+          <div className="flex items-center space-x-2 shrink-0">
+            {availableMonths.length > 0 && (
+              <div className="relative">
+                <CalendarDays size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-primary pointer-events-none" />
+                <select
+                  value={selectedMonth}
+                  onChange={e => setSelectedMonth(e.target.value)}
+                  className="pl-8 pr-3 py-2 rounded-full border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 text-xs font-bold outline-none shadow-sm text-primary focus:ring-2 focus:ring-primary/20 appearance-none cursor-pointer"
+                >
+                  {availableMonths.map(m => (
+                    <option key={m} value={m}>{formatMonthLabel(m)}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
         </div>
-        
-        {allReceipts.length === 0 ? (
+
+        {filteredReceipts.length === 0 ? (
           <div className="text-center py-12 bg-gray-50/20 dark:bg-gray-800/10 rounded-3xl border border-dashed border-gray-100 dark:border-gray-800 text-gray-400 text-xs font-medium">
-            尚無收據
+            {selectedCategory ? '此分類尚無消費' : hasAnyReceipts ? '此月份尚無收據' : '尚無收據'}
           </div>
         ) : (
           <div className="space-y-6">
             {Object.entries(groupedReceipts).map(([dateLabel, dayReceipts]) => (
-                <div key={dateLabel}>
-                  <p className="text-[10px] text-gray-400 font-semibold ml-1 mb-2 tracking-widest uppercase">{dateLabel}</p>
-                  <div className="space-y-2.5">
-                    {dayReceipts.map(r => (
+              <div key={dateLabel}>
+                <p className="text-[10px] text-gray-400 font-semibold ml-1 mb-2 tracking-widest uppercase">{dateLabel}</p>
+                <div className="space-y-2.5">
+                  {dayReceipts.map(r => (
                     <div key={r.id} className="relative group">
                       <Link to={`/edit/${r.id}`} state={{ from: `/trips/${id}` }} className="bg-white dark:bg-gray-800 flex items-center p-4 rounded-2xl border border-gray-100 dark:border-gray-700 active:bg-gray-50 transition-all shadow-[0_2px_8px_rgba(0,0,0,0.02)] hover:border-primary/20">
                         <div className="w-10 h-10 rounded-xl bg-gray-50 dark:bg-gray-900 flex items-center justify-center mr-4 shrink-0 border border-gray-50 dark:border-gray-700 overflow-hidden shadow-inner">
@@ -269,9 +371,6 @@ export default function TripDetail() {
                 </div>
               </div>
             ))}
-            <div ref={observerRef} className="py-6 flex justify-center">
-              {hasMore ? <Loader2 size={16} className="animate-spin text-primary" /> : <p className="text-[10px] text-gray-300 font-bold uppercase tracking-[0.2em]">已載入所有收據</p>}
-            </div>
           </div>
         )}
       </div>

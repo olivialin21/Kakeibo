@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { db, type ReceiptItem } from '../db/db';
 import { useNavigate, useParams, useSearchParams, useLocation } from 'react-router-dom';
 import { ChevronLeft, Save, Camera, Sparkles, Loader2, Plus, X, Plane } from 'lucide-react';
@@ -42,11 +42,16 @@ export default function AddReceipt() {
     { id: crypto.randomUUID(), name: '', originalPrice: 0, categoryId: '', quantity: 1 }
   ]);
 
-  const [isScanning, setIsScanning] = useState(false);
   const [imageBlobs, setImageBlobs] = useState<Blob[]>([]);
-  const [imagePreviews, setImagePreviews] = useState<string[]>([]);
+  const [isScanning, setIsScanning] = useState(false);
   const [showLightbox, setShowLightbox] = useState(false);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const imagePreviews = useMemo(() => imageBlobs.map(blob => URL.createObjectURL(blob)), [imageBlobs]);
+
+  useEffect(() => {
+    return () => imagePreviews.forEach(url => URL.revokeObjectURL(url));
+  }, [imagePreviews]);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const aiFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -62,21 +67,10 @@ export default function AddReceipt() {
           setTotalAmount(receipt.totalAmount.toString());
           setTax8Amount(receipt.tax8Amount?.toString() || '');
           setTax10Amount(receipt.tax10Amount?.toString() || '');
-          setDate(new Date(receipt.date).toISOString().split('T')[0]);
-          setTime(new Date(receipt.date).toTimeString().split(' ')[0].substring(0, 5));
           setTripId(receipt.tripId || '');
           setManualTwdAmount(receipt.manualTwdAmount?.toString() || '');
 
-          if (receipt.imageBlobs && receipt.imageBlobs.length > 0) {
-            const validBlobs = receipt.imageBlobs.filter(b => b instanceof Blob);
-            setImageBlobs(validBlobs);
-            const urls = validBlobs.map(blob => URL.createObjectURL(blob));
-            setImagePreviews(urls);
-          } else if ((receipt as any).imageBlob && (receipt as any).imageBlob instanceof Blob) {
-            const blob = (receipt as any).imageBlob;
-            setImageBlobs([blob]);
-            setImagePreviews([URL.createObjectURL(blob)]);
-          }
+          // We don't load images from the DB for editing since they will not be persisted anymore
 
           const dbItems = await db.receiptItems.where('receiptId').equals(id).toArray();
           if (dbItems.length > 0) setItems(dbItems);
@@ -93,18 +87,14 @@ export default function AddReceipt() {
     setIsScanning(true);
     try {
       const newBlobs: Blob[] = [];
-      const newPreviews: string[] = [];
       const base64Array: string[] = [];
 
       for (const file of files) {
         const dataUrl = await convertToStandardImage(file);
-
-        // convert string Data URL to a real Blob
         const res = await fetch(dataUrl);
         const blob = await res.blob();
 
         newBlobs.push(blob);
-        newPreviews.push(URL.createObjectURL(blob));
 
         const reader = new FileReader();
         const base64 = await new Promise<string>((resolve) => {
@@ -115,17 +105,87 @@ export default function AddReceipt() {
       }
 
       setImageBlobs(prev => [...prev, ...newBlobs]);
-      setImagePreviews(prev => [...prev, ...newPreviews]);
 
-      const result = await analyzeReceiptWithAI(base64Array, categories || []);
+      const results = await analyzeReceiptWithAI(base64Array, categories || []);
 
-      setShopName(result.shopName || shopName);
-      setTotalAmount(result.totalAmount?.toString() || totalAmount);
-      setTax8Amount(result.tax8Amount?.toString() || tax8Amount);
-      setTax10Amount(result.tax10Amount?.toString() || tax10Amount);
-      if (result.date) setDate(result.date);
-      if (result.time) setTime(result.time);
-      if (result.items && result.items.length > 0) setItems(result.items);
+      if (results.length === 1) {
+        const result = results[0];
+        setShopName(result.shopName || shopName);
+        setTotalAmount(result.totalAmount?.toString() || totalAmount);
+        setTax8Amount(result.tax8Amount?.toString() || tax8Amount);
+        setTax10Amount(result.tax10Amount?.toString() || tax10Amount);
+        if (result.date) setDate(result.date);
+        if (result.time) setTime(result.time);
+        if (result.items && result.items.length > 0) setItems(result.items);
+      } else if (results.length > 1) {
+        // Batch creation for multiple receipts (e.g., Suica screenshots)
+        let addedCount = 0;
+        let skippedCount = 0;
+
+        await db.transaction('rw', db.receipts, db.receiptItems, async () => {
+          // Build existing signatures to prevent duplicates
+          const existingReceipts = await db.receipts.toArray();
+          const existingItems = await db.receiptItems.toArray();
+          const signatureSet = new Set<string>();
+          
+          for (const r of existingReceipts) {
+            const dateStr = new Date(r.date).toLocaleDateString('en-CA'); // YYYY-MM-DD local
+            const rItems = existingItems.filter(i => i.receiptId === r.id);
+            const itemName = rItems.length > 0 ? rItems[0].name : '';
+            signatureSet.add(`${dateStr}_${r.totalAmount}_${itemName}`);
+          }
+
+          for (const result of results) {
+            const dateStr = result.date || new Date().toISOString().split('T')[0];
+            const itemName = result.items && result.items.length > 0 ? result.items[0].name : '';
+            const signature = `${dateStr}_${result.totalAmount || 0}_${itemName}`;
+
+            if (signatureSet.has(signature)) {
+              skippedCount++;
+              continue;
+            }
+
+            const newReceiptId = crypto.randomUUID();
+            // Try to use provided time or default to 00:00. Suica screenshots usually don't have time.
+            const timeStr = result.time || '00:00';
+            const combinedDateTime = new Date(`${dateStr}T${timeStr}:00`).getTime();
+            
+            await db.receipts.add({
+              id: newReceiptId,
+              date: combinedDateTime,
+              shopName: result.shopName || '交通紀錄',
+              totalAmount: result.totalAmount || 0,
+              currency: 'JPY',
+              exchangeRate: 0.21,
+              tax8Amount: result.tax8Amount || 0,
+              tax10Amount: result.tax10Amount || 0,
+              manualTwdAmount: undefined,
+              tripId: tripId || undefined
+              // We do not save imageBlobs to the database anymore
+            });
+            
+            const itemsToSave = (result.items || []).map((item: any) => ({
+              ...item,
+              id: crypto.randomUUID(),
+              receiptId: newReceiptId
+            }));
+            
+            if (itemsToSave.length > 0) {
+              await db.receiptItems.bulkAdd(itemsToSave);
+            }
+
+            signatureSet.add(signature); // Prevent duplicates within the same batch
+            addedCount++;
+          }
+        });
+        
+        if (addedCount > 0) {
+          alert(`成功批次新增 ${addedCount} 筆交通紀錄！${skippedCount > 0 ? ` (自動過濾了 ${skippedCount} 筆重複紀錄)` : ''}`);
+        } else if (skippedCount > 0) {
+          alert(`沒有新增任何紀錄，因為 ${skippedCount} 筆資料皆已存在！`);
+        }
+        handleBack();
+      }
     } catch (error: any) {
       console.error('AI Recognition failed', error);
       alert(error instanceof Error ? error.message : 'AI 辨識失敗，請重試');
@@ -140,18 +200,13 @@ export default function AddReceipt() {
     if (files.length === 0) return;
 
     const newBlobs: Blob[] = [];
-    const newPreviews: string[] = [];
-
     for (const file of files) {
       const dataUrl = await convertToStandardImage(file);
       const res = await fetch(dataUrl);
       const blob = await res.blob();
       newBlobs.push(blob);
-      newPreviews.push(URL.createObjectURL(blob));
     }
-
     setImageBlobs(prev => [...prev, ...newBlobs]);
-    setImagePreviews(prev => [...prev, ...newPreviews]);
   };
 
   const handleAddItem = () => {
@@ -199,7 +254,6 @@ export default function AddReceipt() {
 
     await db.transaction('rw', db.receipts, db.receiptItems, async () => {
       if (id) {
-        // Update only specific fields to preserve existing imageBlobs if not updated
         await db.receipts.update(id, {
           date: combinedDateTime,
           shopName,
@@ -210,8 +264,8 @@ export default function AddReceipt() {
           tax10Amount: Number(tax10Amount) || 0,
           manualTwdAmount: finalTwdAmount,
           tripId: tripId || undefined,
-          imageBlobs: imageBlobs.length > 0 ? imageBlobs : undefined // Keep existing if not providing new
-        });
+          imageBlobs: undefined // Remove existing imageBlobs if any to free up space
+        } as any);
         await db.receiptItems.where('receiptId').equals(id).delete();
       } else {
         await db.receipts.add({
@@ -224,21 +278,26 @@ export default function AddReceipt() {
           tax8Amount: Number(tax8Amount) || 0,
           tax10Amount: Number(tax10Amount) || 0,
           manualTwdAmount: finalTwdAmount,
-          tripId: tripId || undefined,
-          imageBlobs: imageBlobs
+          tripId: tripId || undefined
+          // We do not save imageBlobs to the database anymore
         });
       }
 
-      const itemsToSave = items.map(item => ({
-        id: item.id || crypto.randomUUID(),
-        receiptId,
-        name: item.name || '',
-        originalPrice: Number(item.originalPrice) || 0,
-        finalPrice: Number(item.originalPrice) || 0,
-        taxRate: 0,
-        categoryId: item.categoryId || '',
-        quantity: Number(item.quantity) || 1
-      }));
+      const itemsToSave = items.map(item => {
+        const origPrice = Number(item.originalPrice) || 0;
+        const disc = Number(item.discount) || 0;
+        return {
+          id: item.id || crypto.randomUUID(),
+          receiptId,
+          name: item.name || '',
+          originalPrice: origPrice,
+          finalPrice: origPrice - disc,
+          taxRate: 0,
+          categoryId: item.categoryId || '',
+          quantity: Number(item.quantity) || 1,
+          discount: disc
+        };
+      });
 
       await db.receiptItems.bulkAdd(itemsToSave);
     });
@@ -349,11 +408,8 @@ export default function AddReceipt() {
 
                     <button
                       onClick={() => {
-                        const newPreviews = [...imagePreviews];
                         const newBlobs = [...imageBlobs];
-                        newPreviews.splice(index, 1);
                         newBlobs.splice(index, 1);
-                        setImagePreviews(newPreviews);
                         setImageBlobs(newBlobs);
                       }}
                       className="absolute top-3 right-3 bg-black/50 text-white p-1.5 rounded-full hover:bg-black/70 transition-colors z-10 shadow-md backdrop-blur-sm"
@@ -485,7 +541,10 @@ export default function AddReceipt() {
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 font-medium text-gray-300 text-xs">¥</span>
               <input
-                type="number"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                onFocus={e => e.target.select()}
                 value={totalAmount}
                 onChange={e => {
                   const val = e.target.value;
@@ -505,13 +564,16 @@ export default function AddReceipt() {
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 font-medium text-gray-300 text-[10px]">NT$</span>
               <input
-                type="number"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                onFocus={e => e.target.select()}
                 value={manualTwdAmount}
                 onChange={e => {
                   const val = e.target.value;
                   setManualTwdAmount(val);
                   // Auto-convert to JPY ONLY if JPY is empty
-                  if (val && !totalAmount) {
+                  if (val && (!totalAmount || totalAmount === '0')) {
                     const jpy = Math.round(Number(val) / 0.21);
                     setTotalAmount(jpy.toString());
                   }
@@ -529,7 +591,10 @@ export default function AddReceipt() {
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300 text-[10px]">¥</span>
               <input
-                type="number"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                onFocus={e => e.target.select()}
                 value={tax8Amount}
                 onChange={e => setTax8Amount(e.target.value)}
                 className="w-full pl-6 pr-3 py-2.5 rounded-xl border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 focus:bg-white dark:focus:bg-gray-800 focus:ring-1 focus:ring-primary outline-none transition-all text-sm font-medium"
@@ -542,7 +607,10 @@ export default function AddReceipt() {
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300 text-[10px]">¥</span>
               <input
-                type="number"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                onFocus={e => e.target.select()}
                 value={tax10Amount}
                 onChange={e => setTax10Amount(e.target.value)}
                 className="w-full pl-6 pr-3 py-2.5 rounded-xl border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 focus:bg-white dark:focus:bg-gray-800 focus:ring-1 focus:ring-primary outline-none transition-all text-sm font-medium"
@@ -597,8 +665,11 @@ export default function AddReceipt() {
                 <div>
                   <label className="block text-[8px] font-bold text-gray-400 mb-0.5 uppercase ml-1">數量</label>
                   <input
-                    type="number"
-                    value={item.quantity || 1}
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    onFocus={e => e.target.select()}
+                    value={item.quantity || ''}
                     onChange={e => handleItemChange(item.id!, 'quantity', e.target.value)}
                     className="w-full px-3 py-2.5 rounded-xl border border-gray-50 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 focus:bg-white dark:focus:bg-gray-800 focus:ring-1 focus:ring-primary outline-none transition-all text-sm font-medium text-left"
                   />
@@ -609,7 +680,10 @@ export default function AddReceipt() {
                   <div className="relative">
                     <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-gray-300 text-[8px]">¥</span>
                     <input
-                      type="number"
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      onFocus={e => e.target.select()}
                       value={item.originalPrice || ''}
                       onChange={e => handleItemChange(item.id!, 'originalPrice', e.target.value)}
                       placeholder="0"
@@ -623,7 +697,10 @@ export default function AddReceipt() {
                   <div className="relative">
                     <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-red-300 text-[8px]">-</span>
                     <input
-                      type="number"
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      onFocus={e => e.target.select()}
                       value={item.discount || ''}
                       onChange={e => handleItemChange(item.id!, 'discount', e.target.value)}
                       placeholder="0"
@@ -672,63 +749,6 @@ export default function AddReceipt() {
           <Save size={24} strokeWidth={2.5} />
         </button>
       )}
-
-      {/* Full-screen Overlays */}
-      <AnimatePresence>
-        {showLightbox && imagePreview && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setShowLightbox(false)}
-            className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-sm flex items-center justify-center p-4 touch-none"
-          >
-            <motion.div
-              initial={{ scale: 0.9, y: 20 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.9, y: 20 }}
-              className="relative max-w-full max-h-full"
-            >
-              <img
-                src={imagePreview}
-                alt="收據放大圖"
-                className="max-w-full max-h-[85vh] rounded-xl shadow-2xl object-contain"
-              />
-              <button
-                onClick={(e) => { e.stopPropagation(); setShowLightbox(false); }}
-                className="absolute -top-12 right-0 p-3 text-white/60 hover:text-white"
-              >
-                <X size={32} strokeWidth={1.5} />
-              </button>
-              <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 text-white/40 text-[10px] font-medium tracking-widest uppercase">
-                點擊背景關閉
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {isScanning && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[110] bg-white/60 dark:bg-gray-950/60 backdrop-blur-md flex flex-col items-center justify-center"
-          >
-            <div className="relative">
-              <div className="w-20 h-20 border-4 border-primary/20 rounded-full animate-spin border-t-primary" />
-              <div className="absolute inset-0 flex items-center justify-center text-primary">
-                <Sparkles size={24} className="animate-pulse" />
-              </div>
-            </div>
-            <div className="mt-8 text-center">
-              <p className="text-sm font-bold text-gray-900 dark:text-white tracking-tight">Gemini AI 辨識中...</p>
-              <p className="text-[10px] text-gray-400 mt-2 font-medium tracking-widest uppercase">正在解析收據細節與折扣</p>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </>
   );
 }

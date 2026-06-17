@@ -16,6 +16,8 @@ interface CategoryPieChartProps {
   totalValue?: string;
   valuePrefix?: string;
   displayValuePrefix?: string;
+  onCategoryClick?: (categoryName: string) => void;
+  selectedCategory?: string;
 }
 
 export default function CategoryPieChart({
@@ -25,7 +27,9 @@ export default function CategoryPieChart({
   totalLabel,
   totalValue,
   valuePrefix = 'NT$',
-  displayValuePrefix = '¥'
+  displayValuePrefix = '¥',
+  onCategoryClick,
+  selectedCategory
 }: CategoryPieChartProps) {
   if (data.length === 0) {
     return (
@@ -53,9 +57,16 @@ export default function CategoryPieChart({
               paddingAngle={4}
               dataKey="value"
               stroke="none"
+              onClick={(cellData) => onCategoryClick && cellData?.name && onCategoryClick(cellData.name)}
+              className={onCategoryClick ? 'cursor-pointer' : ''}
             >
               {data.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={entry.color} />
+                <Cell 
+                  key={`cell-${index}`} 
+                  fill={entry.color} 
+                  opacity={selectedCategory && selectedCategory !== entry.name ? 0.3 : 1}
+                  className="transition-opacity duration-300"
+                />
               ))}
             </Pie>
             <Tooltip
@@ -90,11 +101,20 @@ export default function CategoryPieChart({
       <div className={`${isHorizontal ? 'w-1/2 space-y-3 max-h-48 overflow-y-auto pr-1' : 'grid gap-3'}`}>
         {data.map((d, i) => {
           const percent = totalValueNum > 0 ? Math.round((d.value / totalValueNum) * 100) : 0;
+          const isSelected = selectedCategory === d.name;
+          const isFaded = selectedCategory && !isSelected;
           
           return (
             <div 
               key={i} 
-              className={`${isHorizontal ? '' : 'bg-gray-50/50 dark:bg-gray-800/40 p-3.5 rounded-2xl border border-gray-100/50 dark:border-gray-700/50 transition-colors hover:bg-gray-100/50 dark:hover:bg-gray-800/60'}`}
+              onClick={() => onCategoryClick && onCategoryClick(d.name)}
+              className={`
+                ${onCategoryClick ? 'cursor-pointer active:scale-[0.98]' : ''}
+                ${isFaded ? 'opacity-40' : 'opacity-100'}
+                ${isSelected ? 'ring-2 ring-primary ring-offset-2 ring-offset-white dark:ring-offset-gray-900' : ''}
+                ${isHorizontal ? 'p-1.5 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800/50' : 'bg-gray-50/50 dark:bg-gray-800/40 p-3.5 rounded-2xl border border-gray-100/50 dark:border-gray-700/50'} 
+                transition-all duration-200
+              `}
             >
               <div className={`grid ${isHorizontal ? 'grid-cols-1 gap-1' : 'grid-cols-[1fr_48px_100px] items-center gap-4'}`}>
                 {/* 1. Category Name & Dot */}
@@ -103,7 +123,7 @@ export default function CategoryPieChart({
                     className="w-2 h-2 rounded-full shrink-0 mr-2.5 shadow-sm" 
                     style={{ backgroundColor: d.color }} 
                   />
-                  <span className={`font-bold text-gray-600 dark:text-gray-300 truncate ${isHorizontal ? 'text-[10px]' : 'text-[11px]'}`}>
+                  <span className={`font-bold truncate ${isSelected ? 'text-primary' : 'text-gray-600 dark:text-gray-300'} ${isHorizontal ? 'text-[10px]' : 'text-[11px]'}`}>
                     {d.name}
                   </span>
                   {isHorizontal && (

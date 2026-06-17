@@ -1,7 +1,8 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Moon, Sun, Download, Upload, ShieldCheck, Camera, RefreshCcw } from 'lucide-react';
+import { X, Moon, Sun, Download, Upload, ShieldCheck, Camera, RefreshCcw, Trash2 } from 'lucide-react';
 import { exportData, importData } from '../utils/dataManagement';
+import { db } from '../db/db';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -14,6 +15,64 @@ interface SidebarProps {
 
 export default function Sidebar({ isOpen, onClose, isDark, setIsDark, needRefresh, updateServiceWorker }: SidebarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [imageSpaceSize, setImageSpaceSize] = useState<string>('計算中...');
+
+  const calculateImageSpace = async () => {
+    try {
+      const receipts = await db.receipts.toArray();
+      let totalBytes = 0;
+      receipts.forEach((r: any) => {
+        if (r.imageBlobs) {
+          r.imageBlobs.forEach((b: any) => {
+            if (b instanceof Blob) totalBytes += b.size;
+          });
+        }
+        if (r.imageBlob && r.imageBlob instanceof Blob) {
+          totalBytes += r.imageBlob.size;
+        }
+      });
+      
+      if (totalBytes === 0) {
+        setImageSpaceSize('0 KB');
+      } else if (totalBytes < 1024 * 1024) {
+        setImageSpaceSize(`${(totalBytes / 1024).toFixed(1)} KB`);
+      } else {
+        setImageSpaceSize(`${(totalBytes / (1024 * 1024)).toFixed(1)} MB`);
+      }
+    } catch (e) {
+      console.error(e);
+      setImageSpaceSize('無法計算');
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      calculateImageSpace();
+    }
+  }, [isOpen]);
+
+  const handleCleanImages = async () => {
+    if (confirm(`確定要刪除所有已儲存的收據圖片嗎？此動作將會釋放 ${imageSpaceSize} 的空間，且不會影響已記錄的收據資料。`)) {
+      try {
+        await db.transaction('rw', db.receipts, async () => {
+          const receipts = await db.receipts.toArray();
+          for (const r of receipts) {
+            if (r.imageBlobs || (r as any).imageBlob) {
+              await db.receipts.update(r.id, {
+                imageBlobs: undefined,
+                imageBlob: undefined
+              } as any);
+            }
+          }
+        });
+        alert('舊圖片清理完成，空間已釋放！');
+        calculateImageSpace();
+      } catch (err) {
+        console.error(err);
+        alert('清理失敗，請重試。');
+      }
+    }
+  };
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -127,6 +186,20 @@ export default function Sidebar({ isOpen, onClose, isDark, setIsDark, needRefres
                     accept=".json"
                     onChange={handleImport}
                   />
+
+                  <button
+                    onClick={handleCleanImages}
+                    disabled={imageSpaceSize === '0 KB' || imageSpaceSize === '計算中...'}
+                    className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-gray-700 dark:text-gray-200 disabled:opacity-50 disabled:pointer-events-none"
+                  >
+                    <div className="flex items-center space-x-3">
+                      <Trash2 size={18} className="text-red-500" />
+                      <span className="text-sm font-medium">清理舊圖片</span>
+                    </div>
+                    <span className="text-[10px] font-bold text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full">
+                      {imageSpaceSize}
+                    </span>
+                  </button>
                 </div>
               </div>
             </div>

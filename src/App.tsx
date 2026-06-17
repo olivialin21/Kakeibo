@@ -28,6 +28,40 @@ function App() {
     },
   });
 
+  // 當 service worker 更新並取得控制權時，自動重整頁面以套用新 code
+  useEffect(() => {
+    const handleControllerChange = () => {
+      window.location.reload();
+    };
+    if (navigator.serviceWorker) {
+      navigator.serviceWorker.addEventListener('controllerchange', handleControllerChange);
+    }
+    return () => {
+      if (navigator.serviceWorker) {
+        navigator.serviceWorker.removeEventListener('controllerchange', handleControllerChange);
+      }
+    };
+  }, []);
+
+  // 當頁面恢復可見時，手動檢查 PWA 更新
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible' && navigator.serviceWorker) {
+        navigator.serviceWorker.getRegistration().then(reg => {
+          if (reg) {
+            reg.update().catch(err => console.warn('PWA update check failed', err));
+          }
+        });
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', handleVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', handleVisibility);
+    };
+  }, []);
+
   const close = () => {
     setOfflineReady(false);
     setNeedRefresh(false);
@@ -119,7 +153,7 @@ function App() {
       {/* PWA Update Notification Bar */}
       <AnimatePresence>
         {(offlineReady || needRefresh) && (
-          <motion.div 
+          <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
@@ -134,7 +168,7 @@ function App() {
               </div>
               <div className="flex items-center space-x-3">
                 {needRefresh && (
-                  <button 
+                  <button
                     onClick={() => updateServiceWorker(true)}
                     className="bg-white text-primary px-3 py-1 rounded-lg text-[10px] font-bold active:scale-95 transition-transform"
                   >
@@ -199,7 +233,6 @@ function App() {
         <div className="flex justify-around items-center h-16 max-w-2xl mx-auto px-2">
           <NavItem to="/" icon={<Home size={22} />} label="首頁" />
           <NavItem to="/trips" icon={<Plane size={22} />} label="旅行" />
-          <div className="w-16" /> {/* Spacer for FAB if needed, or just standard spacing */}
           <NavItem to="/charts" icon={<PieChart size={22} />} label="統計" />
           <NavItem to="/categories" icon={<Tags size={22} />} label="分類" />
         </div>

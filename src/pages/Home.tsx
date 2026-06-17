@@ -1,68 +1,57 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
-import { Receipt, ChevronRight, X, Loader2 } from 'lucide-react';
+import { Receipt, ChevronRight, X, Loader2, CalendarDays } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { formatToTwd, groupReceiptsByDate, formatReceiptTime } from '../utils/formatters';
+import { getCurrentMonthPrefix, getMonthRange, formatMonthLabel, getAvailableMonthsFromDates } from '../utils/monthUtils';
 
 export default function Home() {
-  const [limit, setLimit] = useState(20);
-  const observerRef = useRef<HTMLDivElement>(null);
+  const [selectedMonth, setSelectedMonth] = useState(() => getCurrentMonthPrefix());
+  const lastCalendarMonthRef = useRef(getCurrentMonthPrefix());
 
-  const receipts = useLiveQuery(
-    () => db.receipts.orderBy('date').reverse().limit(limit).toArray(),
-    [limit]
-  );
+  const receipts = useLiveQuery(async () => {
+    const { startOfMonth, startOfNextMonth } = getMonthRange(selectedMonth);
+    return db.receipts
+      .where('date')
+      .between(startOfMonth, startOfNextMonth, true, false)
+      .reverse()
+      .sortBy('date');
+  }, [selectedMonth]);
 
   const totalCount = useLiveQuery(() => db.receipts.count());
 
-  const currentMonthPrefix = new Date().toISOString().slice(0, 7);
+  const availableMonths = useLiveQuery(async () => {
+    const dates: number[] = [];
+    await db.receipts.orderBy('date').each(r => dates.push(r.date));
+    return getAvailableMonthsFromDates(dates, getCurrentMonthPrefix());
+  });
 
-  // For the summary card, we still want the monthly total
-  const thisMonthStats = useLiveQuery(async () => {
-    const allThisMonth = await db.receipts
-      .where('date')
-      .between(
-        new Date(`${currentMonthPrefix}-01`).getTime(),
-        new Date(`${currentMonthPrefix}-31`).getTime() + 86400000
-      )
-      .toArray();
-
-    const jpy = allThisMonth.reduce((acc, r) => acc + r.totalAmount, 0);
-    const twd = allThisMonth.reduce((acc, r) => acc + formatToTwd(r.totalAmount, r.manualTwdAmount), 0);
-    return { jpy, twd, count: allThisMonth.length };
+  // 頁面恢復可見時，若使用者仍在追蹤日曆當月則自動切換到新月份
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        const calendarMonth = getCurrentMonthPrefix();
+        setSelectedMonth(prev => {
+          if (prev === lastCalendarMonthRef.current && prev !== calendarMonth) {
+            return calendarMonth;
+          }
+          return prev;
+        });
+        lastCalendarMonthRef.current = calendarMonth;
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, []);
 
-  const hasMore = (receipts?.length || 0) < (totalCount || 0);
-
-  // 用 ref 追蹤載入狀態，避免多次觸發
-  const isLoadingRef = useRef(false);
-
-  const handleObserver = useCallback((entries: IntersectionObserverEntry[]) => {
-    const [target] = entries;
-    if (target.isIntersecting && hasMore && !isLoadingRef.current) {
-      isLoadingRef.current = true;
-      setLimit(prev => prev + 20);
-      
-      // 給予一點時間讓資料載入，之後重置鎖定
-      setTimeout(() => {
-        isLoadingRef.current = false;
-      }, 500);
-    }
-  }, [hasMore]);
-
-  useEffect(() => {
-    const element = observerRef.current;
-    if (!element) return;
-
-    const observer = new IntersectionObserver(handleObserver, { 
-      threshold: 0.1,
-      rootMargin: '200px' // 提早 200px 載入，減少卡頓感
-    });
-    observer.observe(element);
-    return () => observer.unobserve(element);
-  }, [handleObserver]);
+  const monthStats = useMemo(() => {
+    if (!receipts) return undefined;
+    const jpy = receipts.reduce((acc, r) => acc + r.totalAmount, 0);
+    const twd = receipts.reduce((acc, r) => acc + formatToTwd(r.totalAmount, r.manualTwdAmount), 0);
+    return { jpy, twd, count: receipts.length };
+  }, [receipts]);
 
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.preventDefault();
@@ -75,10 +64,12 @@ export default function Home() {
     });
   };
 
-  // Group receipts by date using shared utility
   const groupedReceipts = useMemo(() => {
     return receipts ? groupReceiptsByDate(receipts) : {};
   }, [receipts]);
+
+  const monthLabel = formatMonthLabel(selectedMonth);
+  const hasAnyReceipts = (totalCount ?? 0) > 0;
 
   return (
     <div className="space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-6">
@@ -91,12 +82,12 @@ export default function Home() {
           <div className="flex items-center justify-between mb-8">
             <div className="flex items-center space-x-2">
               <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-              <h2 className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/50">本月支出概覽</h2>
+              <h2 className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/50">{monthLabel}支出概覽</h2>
             </div>
             <div className="flex items-center space-x-1 px-3 py-1 bg-white/10 backdrop-blur-md rounded-full border border-white/10">
               <Receipt size={10} className="text-white/70" />
               <span className="text-[10px] font-bold text-white/90">
-                {thisMonthStats?.count || 0} 筆
+                {monthStats?.count || 0} 筆
               </span>
             </div>
           </div>
@@ -106,7 +97,7 @@ export default function Home() {
               <p className="text-[10px] font-semibold text-white/40 uppercase tracking-widest mb-1">預估台幣</p>
               <div className="flex items-baseline space-x-1">
                 <span className="text-lg font-medium text-white/40">NT$</span>
-                <span className="text-4xl font-semibold tracking-tight">{(thisMonthStats?.twd || 0).toLocaleString()}</span>
+                <span className="text-4xl font-semibold tracking-tight">{(monthStats?.twd || 0).toLocaleString()}</span>
               </div>
             </div>
 
@@ -115,7 +106,7 @@ export default function Home() {
                 <p className="text-[10px] font-semibold text-white/40 uppercase tracking-widest mb-1">日幣總計</p>
                 <div className="flex items-baseline space-x-1 text-white/90">
                   <span className="text-sm font-medium text-white/40">¥</span>
-                  <span className="text-xl font-semibold">{(thisMonthStats?.jpy || 0).toLocaleString()}</span>
+                  <span className="text-xl font-semibold">{(monthStats?.jpy || 0).toLocaleString()}</span>
                 </div>
               </div>
             </div>
@@ -125,7 +116,24 @@ export default function Home() {
 
       {/* Receipt List */}
       <div className="space-y-4">
-        <h3 className="font-semibold text-base ml-1 text-gray-800 dark:text-gray-100 tracking-tight">收據紀錄</h3>
+        <div className="flex items-center justify-between ml-1">
+          <h3 className="font-semibold text-base text-gray-800 dark:text-gray-100 tracking-tight">收據紀錄</h3>
+          {availableMonths && availableMonths.length > 0 && (
+            <div className="relative">
+              <CalendarDays size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-primary pointer-events-none" />
+              <select
+                value={selectedMonth}
+                onChange={e => setSelectedMonth(e.target.value)}
+                className="pl-8 pr-3 py-2 rounded-full border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 text-xs font-bold outline-none shadow-sm text-primary focus:ring-2 focus:ring-primary/20 appearance-none cursor-pointer"
+              >
+                {availableMonths.map(m => (
+                  <option key={m} value={m}>{formatMonthLabel(m)}</option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+
         {receipts === undefined ? (
           <div className="flex justify-center py-10">
             <Loader2 className="animate-spin text-primary opacity-50" size={24} />
@@ -135,10 +143,14 @@ export default function Home() {
             <div className="w-12 h-12 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
               <Receipt size={24} className="text-gray-300" />
             </div>
-            <p className="text-xs text-gray-400 font-medium">尚未有任何記帳紀錄</p>
-            <Link to="/add" className="px-6 py-2.5 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-full text-xs font-medium hover:opacity-90 transition-opacity shadow-sm">
-              開始記帳
-            </Link>
+            <p className="text-xs text-gray-400 font-medium">
+              {hasAnyReceipts ? '此月份尚無收據' : '尚未有任何記帳紀錄'}
+            </p>
+            {!hasAnyReceipts && (
+              <Link to="/add" className="px-6 py-2.5 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-full text-xs font-medium hover:opacity-90 transition-opacity shadow-sm">
+                開始記帳
+              </Link>
+            )}
           </div>
         ) : (
           <div className="space-y-6">
@@ -169,24 +181,10 @@ export default function Home() {
                             className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 flex items-center shadow-[0_2px_8px_rgba(0,0,0,0.02)] active:bg-gray-50 transition-all hover:border-primary/20"
                           >
                             <div className="w-12 h-12 rounded-xl bg-gray-50 dark:bg-gray-900 flex items-center justify-center shrink-0 mr-4 border border-gray-50 dark:border-gray-700 overflow-hidden shadow-inner">
-                              {r.imageBlobs && r.imageBlobs.length > 0 && r.imageBlobs[0] instanceof Blob ? (
-                                <img
-                                  src={URL.createObjectURL(r.imageBlobs[0])}
-                                  alt=""
-                                  className="w-full h-full object-cover"
-                                />
-                              ) : (r as any).imageBlob && (r as any).imageBlob instanceof Blob ? (
-                                <img
-                                  src={URL.createObjectURL((r as any).imageBlob)}
-                                  alt=""
-                                  className="w-full h-full object-cover"
-                                />
-                              ) : (
-                                <div className="flex flex-col items-center justify-center text-gray-300">
-                                  <Receipt size={18} />
-                                  <span className="text-[6px] font-bold uppercase mt-0.5">Cash</span>
-                                </div>
-                              )}
+                              <div className="flex flex-col items-center justify-center text-gray-300">
+                                <Receipt size={18} />
+                                <span className="text-[6px] font-bold uppercase mt-0.5">Cash</span>
+                              </div>
                             </div>
 
                             <div className="flex-1 min-w-0">
@@ -224,18 +222,6 @@ export default function Home() {
                   </div>
                 </div>
               ))}
-
-            {/* Infinite Scroll Sentinel */}
-            <div ref={observerRef} className="py-6 flex justify-center">
-              {hasMore ? (
-                <div className="flex items-center space-x-2 text-gray-400">
-                  <Loader2 size={16} className="animate-spin" />
-                  <span className="text-[10px] font-bold uppercase tracking-widest">載入中...</span>
-                </div>
-              ) : receipts && receipts.length > 0 ? (
-                <p className="text-[10px] text-gray-300 font-bold uppercase tracking-[0.2em] text-center">已載入所有資料</p>
-              ) : null}
-            </div>
           </div>
         )}
       </div>
